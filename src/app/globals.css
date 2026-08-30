@@ -1,0 +1,129 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens.
+ *
+ * Every colour in the UI is one of these semantic names - never a raw hex in a
+ * component. That is what makes the dark theme a single block of overrides
+ * instead of a hunt through every file.
+ *
+ * NOTE: these tokens theme the *application chrome*. The PDF's own theming is a
+ * completely separate system (Phase 1) - a document must not change appearance
+ * because the user toggled dark mode in the editor.
+ */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.21 0.006 285.9);
+
+  --surface: oklch(0.985 0.001 286.4);
+  --surface-hover: oklch(0.967 0.001 286.4);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.006 285.9);
+
+  --muted: oklch(0.967 0.001 286.4);
+  --muted-foreground: oklch(0.552 0.016 285.9);
+
+  --border: oklch(0.92 0.004 286.3);
+  --input: oklch(0.92 0.004 286.3);
+  --ring: oklch(0.55 0.16 258);
+
+  --primary: oklch(0.55 0.16 258);
+  --primary-foreground: oklch(0.985 0 0);
+
+  --accent: oklch(0.967 0.001 286.4);
+  --accent-foreground: oklch(0.21 0.006 285.9);
+
+  --destructive: oklch(0.577 0.245 27.3);
+  --destructive-foreground: oklch(0.985 0 0);
+
+  --success: oklch(0.62 0.14 155);
+  --warning: oklch(0.72 0.16 78);
+
+  --radius: 0.625rem;
+}
+
+.dark {
+  --background: oklch(0.16 0.005 285.8);
+  --foreground: oklch(0.96 0.001 286.4);
+
+  --surface: oklch(0.20 0.006 285.9);
+  --surface-hover: oklch(0.25 0.007 286);
+
+  --card: oklch(0.20 0.006 285.9);
+  --card-foreground: oklch(0.96 0.001 286.4);
+
+  --muted: oklch(0.25 0.007 286);
+  --muted-foreground: oklch(0.68 0.012 286);
+
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.65 0.15 258);
+
+  --primary: oklch(0.65 0.15 258);
+  --primary-foreground: oklch(0.16 0.005 285.8);
+
+  --accent: oklch(0.25 0.007 286);
+  --accent-foreground: oklch(0.96 0.001 286.4);
+
+  --destructive: oklch(0.65 0.2 25);
+  --destructive-foreground: oklch(0.985 0 0);
+
+  --success: oklch(0.7 0.14 155);
+  --warning: oklch(0.78 0.15 78);
+}
+
+/* Expose the tokens to Tailwind so `bg-surface`, `text-muted-foreground`,
+ * `border-border` etc. all work as normal utilities. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SFMono-Regular", monospace;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* A focus ring you can actually see, on every interactive element. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}

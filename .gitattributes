@@ -1,0 +1,19 @@
+# Normalise line endings. CI runs on Linux, you develop on Windows - without
+# this, every file looks "changed" the moment it crosses machines.
+* text=auto eol=lf
+
+# Never touch binaries.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+
+# Collapse the lockfile in GitHub diffs, but keep it a real text diff locally -
+# marking it binary would hide dependency changes from security review.
+package-lock.json linguist-generated=true
