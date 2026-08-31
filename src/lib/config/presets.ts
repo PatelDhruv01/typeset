@@ -141,7 +141,16 @@ const PRESET_LIST: StylePreset[] = [
       toc: { enabled: true, maxDepth: 3, pageNumbers: true, dotLeaders: true },
       structure: { numberHeadings: true, numberDepth: 3, pageBreakBefore: "h1" },
       header: { enabled: true, left: "{title}", right: "{section}", rule: true },
-      footer: { enabled: true, center: "{page}", showOnFirstPage: false },
+      // Every slot is stated explicitly. A preset that sets only `center`
+      // inherits the schema default `right: "{page} / {pages}"` and prints
+      // the page number twice.
+      footer: {
+        enabled: true,
+        left: "",
+        center: "{page}",
+        right: "",
+        showOnFirstPage: false,
+      },
     },
   },
 
@@ -187,7 +196,7 @@ const PRESET_LIST: StylePreset[] = [
         numberFigures: true,
         numberTables: true,
       },
-      footer: { enabled: true, center: "{page}" },
+      footer: { enabled: true, left: "", center: "{page}", right: "" },
     },
   },
 
@@ -227,7 +236,13 @@ const PRESET_LIST: StylePreset[] = [
       toc: { enabled: true, maxDepth: 2 },
       structure: { pageBreakBefore: "h1", widows: 3, orphans: 3 },
       header: { enabled: true, center: "{section}", showOnFirstPage: false },
-      footer: { enabled: true, center: "{page}", showOnFirstPage: false },
+      footer: {
+        enabled: true,
+        left: "",
+        center: "{page}",
+        right: "",
+        showOnFirstPage: false,
+      },
     },
   },
 

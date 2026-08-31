@@ -54,6 +54,47 @@ describe("presets", () => {
     expect(taglines.size).toBe(PRESET_IDS.length);
   });
 
+  describe("running heads and feet", () => {
+    // Found by rendering: Report, Academic and Book each set only the centre
+    // footer slot, and silently inherited the schema default
+    // `right: "{page} / {pages}"` - so every page carried the page number
+    // twice. A preset must state every slot it cares about.
+    it.each(PRESET_IDS)("%s numbers each page at most once", (id) => {
+      const config = configFromPreset(id);
+
+      for (const area of ["header", "footer"] as const) {
+        const slot = config[area];
+        if (!slot.enabled) continue;
+
+        const withPageToken = [slot.left, slot.center, slot.right].filter(
+          (template) => template.includes("{page}"),
+        );
+
+        expect(
+          withPageToken.length,
+          `${id} ${area} puts {page} in ${withPageToken.length} slots: ${withPageToken.join(" | ")}`,
+        ).toBeLessThanOrEqual(1);
+      }
+    });
+
+    it.each(PRESET_IDS)("%s uses only known template tokens", (id) => {
+      const config = configFromPreset(id);
+      const known =
+        /\{(page|pages|title|subtitle|author|date|section|filename)\}/g;
+
+      for (const area of ["header", "footer"] as const) {
+        for (const template of [
+          config[area].left,
+          config[area].center,
+          config[area].right,
+        ]) {
+          const leftover = template.replace(known, "");
+          expect(leftover, `${id} ${area}: ${template}`).not.toMatch(/[{}]/);
+        }
+      }
+    });
+  });
+
   it("academic prints link URLs, because a paper copy has no hyperlinks", () => {
     expect(configFromPreset("academic").theme.linkStyle).toBe("footnote");
   });

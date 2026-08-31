@@ -5,7 +5,7 @@
 Turn Markdown into a typeset, print-ready PDF — with a live paginated preview,
 real typography controls, and no sign-up.
 
-> **Status: in development.** Phases 0-1 of 7 complete: the renderer works, the PDF engine does not exist yet. See the roadmap below.
+> **Status: in development.** Phases 0-2 of 7 complete: Markdown in, paginated PDF out, with running heads and page numbers. The interface is still a bare harness. See the roadmap below.
 
 ---
 
@@ -33,10 +33,25 @@ from the same HTML and the same stylesheet.** What you see is what you download.
               ┌─────────────┴─────────────┐
               ▼                           ▼
       preview <iframe>             headless Chromium
-      Paged.js pagination          /api/render (Node runtime)
+      Paged.js pagination          /api/render + Paged.js
               │                           │
         what you SEE                what you DOWNLOAD
 ```
+
+### Why Paged.js rather than Chromium's own pagination
+
+Chromium's `page.pdf()` cannot render CSS margin boxes. Running heads, running
+section names and cross-referenced contents entries would have to live in a
+separate `headerTemplate` — a second HTML document with its own styles, certain
+to drift from the first. Paged.js implements CSS Paged Media properly, so
+`@top-center`, `string-set` and `target-counter()` all work, and the browser
+preview can run the identical bundle.
+
+The cost is time: Paged.js lays the whole document out in JavaScript before
+anything is printed. `renderPdfWithFallback` bounds that and falls back to
+Chromium's native pagination if it fails — a document without running heads
+beats an error page. The response reports which was used in
+`X-Typeset-Paginator`.
 
 Everything the user can change lives in one serializable `DocumentConfig`
 object, validated by a Zod schema shared between client and server. That single
@@ -78,13 +93,36 @@ Then open http://localhost:3000.
 | `npm run typecheck` | TypeScript, no emit |
 | `npm run lint` | ESLint |
 | `npm run check` | Typecheck + lint + test (what CI runs) |
-| `npm run assets` | Regenerate bundled fonts and stylesheets |
+| `npm run assets` | Regenerate bundled fonts, stylesheets and Paged.js |
+
+Browser-dependent tests skip automatically when no Chrome, Chromium, Brave or
+Edge is installed. Set `CHROME_EXECUTABLE_PATH` in `.env.local` to choose one.
+
+## API
+
+```bash
+curl -X POST http://localhost:3000/api/render -H 'Content-Type: application/json' -d '{"source":"# Hello","preset":"report"}' -o out.pdf
+```
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `source` | string | The Markdown. Required. |
+| `preset` | string | One of the preset ids. Resolved first. |
+| `config` | object | Partial `DocumentConfig`, deep-merged over the preset. |
+| `sourceName` | string | Original filename, used to derive the output name. |
+| `format` | `pdf` or `html` | `html` returns the rendered document instead. |
+
+Responses carry `X-Typeset-Pages`, `X-Typeset-Paginator`,
+`X-Typeset-Duration-Ms`, and `X-Typeset-Fallback` when a render was degraded.
+
+The output filename is derived, not fixed: explicit config, then front matter
+`title`, then the first `# heading`, then the uploaded filename.
 
 ## Roadmap
 
 - [x] **Phase 0** — Scaffold, repo, CI
 - [x] **Phase 1** — `DocumentConfig` schema, renderer core, theme system
-- [ ] **Phase 2** — Chromium PDF engine and download
+- [x] **Phase 2** — Chromium PDF engine and download
 - [ ] **Phase 3** — Editor, preset cards, live paginated preview
 - [ ] **Phase 4** — Full customisation drawer
 - [ ] **Phase 5** — Cover page, table of contents, section numbering, watermark
@@ -101,9 +139,11 @@ src/
     fonts/              Font registry (+ generated file manifest)
     renderer/           markdown -> HTML, config -> CSS, document assembly
       generated/        Baked-in code themes and KaTeX CSS
+    pdf/                Browser launch, asset inlining, the PDF engine
 scripts/
   sync-fonts.mjs        Copies woff2 out of @fontsource into public/fonts
-  sync-styles.mjs       Bakes highlight.js themes and KaTeX CSS into modules
+  sync-styles.mjs       Bakes code themes and KaTeX CSS in, copies Paged.js
+  proof.mjs             Screenshots a paginated page, to check running heads
 reference/
   convert.legacy.js     The original single-purpose script this grew from
   sample-technical.md   A deliberately hostile test document (1164 lines)
