@@ -5,7 +5,7 @@
 Turn Markdown into a typeset, print-ready PDF — with a live paginated preview,
 real typography controls, and no sign-up.
 
-> **Status: in development.** Phase 0 of 7 complete. See the roadmap below.
+> **Status: in development.** Phases 0-1 of 7 complete: the renderer works, the PDF engine does not exist yet. See the roadmap below.
 
 ---
 
@@ -73,32 +73,49 @@ Then open http://localhost:3000.
 | --- | --- |
 | `npm run dev` | Development server with hot reload |
 | `npm run build` | Production build |
+| `npm test` | Vitest, once |
+| `npm run test:watch` | Vitest, watching |
 | `npm run typecheck` | TypeScript, no emit |
 | `npm run lint` | ESLint |
-| `npm run check` | Typecheck + lint (what CI runs) |
+| `npm run check` | Typecheck + lint + test (what CI runs) |
+| `npm run assets` | Regenerate bundled fonts and stylesheets |
 
 ## Roadmap
 
 - [x] **Phase 0** — Scaffold, repo, CI
-- [ ] **Phase 1** — `DocumentConfig` schema, renderer core, theme system
+- [x] **Phase 1** — `DocumentConfig` schema, renderer core, theme system
 - [ ] **Phase 2** — Chromium PDF engine and download
 - [ ] **Phase 3** — Editor, preset cards, live paginated preview
 - [ ] **Phase 4** — Full customisation drawer
 - [ ] **Phase 5** — Cover page, table of contents, section numbering, watermark
-- [ ] **Phase 6** — Math (KaTeX), Mermaid, callouts, image handling
+- [ ] **Phase 6** — Mermaid diagrams, image handling (maths and callouts landed early, in Phase 1)
 - [ ] **Phase 7** — Saved presets, config sharing, batch conversion, deploy
 
 ## Repository layout
 
 ```
 src/
-  app/            Next.js routes and the application shell
-  components/     UI components
-  lib/            Framework-free logic — renderer, config schema, PDF engine
+  app/                  Next.js routes and the application shell
+  lib/
+    config/             DocumentConfig schema, page geometry, style presets
+    fonts/              Font registry (+ generated file manifest)
+    renderer/           markdown -> HTML, config -> CSS, document assembly
+      generated/        Baked-in code themes and KaTeX CSS
+scripts/
+  sync-fonts.mjs        Copies woff2 out of @fontsource into public/fonts
+  sync-styles.mjs       Bakes highlight.js themes and KaTeX CSS into modules
 reference/
-  convert.legacy.js      The original single-purpose script this grew from
-  sample-technical.md    A deliberately hostile test document
+  convert.legacy.js     The original single-purpose script this grew from
+  sample-technical.md   A deliberately hostile test document (1164 lines)
 ```
+
+### Generated assets
+
+`public/fonts/`, `public/katex/` and `src/lib/renderer/generated/` are produced
+by the two sync scripts and regenerated automatically before `dev` and `build`.
+Adding a font is one line in `FONT_PACKAGES`; everything else — weight axes,
+unicode ranges, licensing metadata — is read from the package's own
+`metadata.json`.
 
 ## License
 
