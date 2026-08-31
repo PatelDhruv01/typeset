@@ -7,6 +7,7 @@ import type { Page } from "puppeteer-core";
 import type { DocumentConfig } from "@/lib/config/schema";
 import { resolvePageSize } from "@/lib/config/page-sizes";
 import { renderDocument } from "@/lib/renderer/document";
+import { PAGEDJS_URL } from "@/lib/renderer/paged-constants";
 import { fillTocPageNumbers } from "@/lib/renderer/paged-hooks";
 import { inlineAssetOrKeep } from "@/lib/pdf/assets";
 import { getBrowser } from "@/lib/pdf/browser";
@@ -57,8 +58,6 @@ export type PdfRenderResult = {
 
 /** Paged.js's browser bundle, read once and injected as inline script text. */
 let pagedJsSource: string | null = null;
-
-export const PAGEDJS_URL = "/pagedjs/paged.polyfill.min.js";
 
 /**
  * Read the Paged.js bundle from public/, where scripts/sync-styles.mjs put it.

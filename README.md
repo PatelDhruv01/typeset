@@ -5,7 +5,7 @@
 Turn Markdown into a typeset, print-ready PDF — with a live paginated preview,
 real typography controls, and no sign-up.
 
-> **Status: in development.** Phases 0-2 of 7 complete: Markdown in, paginated PDF out, with running heads and page numbers. The interface is still a bare harness. See the roadmap below.
+> **Status: in development.** Phases 0-3 of 7 complete: a real editor, a page-accurate live preview and paginated PDF export. See the roadmap below.
 
 ---
 
@@ -33,7 +33,7 @@ from the same HTML and the same stylesheet.** What you see is what you download.
               ┌─────────────┴─────────────┐
               ▼                           ▼
       preview <iframe>             headless Chromium
-      Paged.js pagination          /api/render + Paged.js
+      + Paged.js, same bundle      /api/render + Paged.js
               │                           │
         what you SEE                what you DOWNLOAD
 ```
@@ -123,7 +123,7 @@ The output filename is derived, not fixed: explicit config, then front matter
 - [x] **Phase 0** — Scaffold, repo, CI
 - [x] **Phase 1** — `DocumentConfig` schema, renderer core, theme system
 - [x] **Phase 2** — Chromium PDF engine and download
-- [ ] **Phase 3** — Editor, preset cards, live paginated preview
+- [x] **Phase 3** — Editor, preset cards, live paginated preview
 - [ ] **Phase 4** — Full customisation drawer
 - [~] **Phase 5** — Cover page, contents and section numbering done; watermark pending
 - [ ] **Phase 6** — Mermaid diagrams, image handling (maths and callouts landed early, in Phase 1)
@@ -140,6 +140,7 @@ src/
     renderer/           markdown -> HTML, config -> CSS, document assembly
       generated/        Baked-in code themes and KaTeX CSS
     pdf/                Browser launch, asset inlining, the PDF engine
+  components/           Editor and preview (both client-only)
 scripts/
   sync-fonts.mjs        Copies woff2 out of @fontsource into public/fonts
   sync-styles.mjs       Bakes code themes and KaTeX CSS in, copies Paged.js
@@ -149,6 +150,22 @@ reference/
   convert.legacy.js     The original single-purpose script this grew from
   sample-technical.md   A deliberately hostile test document (1164 lines)
 ```
+
+### Asset URLs
+
+The stylesheet names fonts by same-origin path (`/fonts/...`). Neither consumer
+can use that as it stands, and they need opposite fixes:
+
+- Headless Chromium renders detached HTML with no origin, so nothing relative
+  resolves. Each file is **inlined as a `data:` URI**.
+- The preview iframe uses `srcdoc`, whose `window.location.href` is
+  `about:srcdoc`. Paged.js resolves stylesheet URLs against *that*, not
+  `document.baseURI`, and `new URL("/fonts/x", "about:srcdoc")` throws — which
+  aborts pagination before a single page is laid out. A `<base>` tag does not
+  help, because it is not what Paged.js reads. The URLs are made **absolute**
+  instead.
+
+Both go through the same `CssOptions.resolveUrl` seam.
 
 ### Generated assets
 
