@@ -64,7 +64,8 @@ function slotContent(
   if (template.trim() === "") return null;
 
   const parts: string[] = [];
-  const pattern = /\{(page|pages|title|subtitle|author|date|section|filename)\}/g;
+  const pattern =
+    /\{(page|pages|title|subtitle|author|date|section|subsection|filename)\}/g;
   let cursor = 0;
 
   for (let match = pattern.exec(template); match; match = pattern.exec(template)) {
@@ -80,8 +81,13 @@ function slotContent(
         parts.push("counter(pages)");
         break;
       case "section":
-        // Set by `string-set` on headings, below.
-        parts.push("string(section-title)");
+        // `first` is the first value assigned on this page, falling back to the
+        // one carried over. Without it the head keeps showing the previous
+        // section on a page that opens a new one.
+        parts.push("string(section-title, first)");
+        break;
+      case "subsection":
+        parts.push("string(subsection-title, first)");
         break;
       case "title":
         parts.push(cssString(context.title));
@@ -314,6 +320,23 @@ body {
   }
 }`);
 
+  // Paged.js marks every element it splits across a page with
+  // data-align-last-split-element="justify", so the visible last line of a
+  // fragment stays justified. That is correct in itself, but text-align-last is
+  // an *inherited* property and the body wrapper is split on every page - so the
+  // marker leaks down and force-justifies the last line of every paragraph,
+  // heading and table cell in the document. A two-word paragraph came out
+  // stretched across the full measure.
+  //
+  // Re-assert the default on elements that actually hold text. Paged.js's own
+  // attribute rule is more specific, so genuinely split elements keep their
+  // justified fragment.
+  rules.push(`/* undo Paged.js's inherited text-align-last */
+p, li, dd, dt, blockquote, figcaption, td, th, pre, figure,
+h1, h2, h3, h4, h5, h6 {
+  text-align-last: auto;
+}`);
+
   if (type.measure !== null) {
     rules.push(`.doc-body { max-width: ${num(type.measure, 2)}mm; margin-inline: auto; }`);
   }
@@ -352,15 +375,19 @@ h1:first-child, h2:first-child { margin-top: 0; }
 
 ${headingRules}
 
-/* Running-head source. Each h1 (and h2 as a fallback) republishes the current
-   section name, which {section} in a header or footer reads back. */
+/* Running-head sources. {section} follows h1 and {subsection} follows h2.
+   Having both write the same string made the head show whichever came last,
+   so a page opening on a new h1 still displayed the previous h2. */
 h1 { string-set: section-title content(text); }
-h2 { string-set: section-title content(text); }
+h2 { string-set: subsection-title content(text); }
 
 .heading-number {
   color: var(--doc-muted);
   font-variant-numeric: tabular-nums;
-  margin-right: 0.5em;
+  /* The gap is mostly a real space in the markup, so content(text) picks it up
+     and a running head reads "3.2 District variation" rather than
+     "3.2District variation". This only adds a little air on top. */
+  margin-right: 0.15em;
   font-weight: inherit;
 }`);
 
@@ -458,6 +485,10 @@ pre {
   padding: 0.85em 1em;
   line-height: 1.45;
   overflow: visible;
+  /* text-align is inherited, so a justified body would stretch the spaces in
+     wrapped code lines and destroy the alignment the author wrote. */
+  text-align: left;
+  hyphens: none;
   ${
     type.wrapCode
       ? "white-space: pre-wrap;\n  overflow-wrap: break-word;\n  word-break: break-word;"
@@ -590,6 +621,203 @@ figcaption {
   text-align: center;
   hyphens: none;
 }`);
+
+  // --- cover --------------------------------------------------------------
+  if (config.cover.enabled) {
+    // A named page, so the cover never inherits running heads or a page number.
+    // Setting `content: none` on every margin box is the only reliable way:
+    // @page :first would also match the first content page in documents where
+    // the cover is switched off.
+    rules.push(`/* cover */
+@page cover {
+  margin: ${num(page.margins.top, 2)}mm ${num(page.margins.right, 2)}mm ${num(page.margins.bottom, 2)}mm ${num(page.margins.left, 2)}mm;
+  @top-left { content: none; }
+  @top-center { content: none; }
+  @top-right { content: none; }
+  @bottom-left { content: none; }
+  @bottom-center { content: none; }
+  @bottom-right { content: none; }
+}
+
+.cover {
+  page: cover;
+  break-after: page;
+  page-break-after: always;
+  display: flex;
+  flex-direction: column;
+  /* Paged.js gives the page box a definite height, so a full-height cover can
+     distribute its blocks vertically instead of piling up at the top. */
+  min-height: 100%;
+  text-align: left;
+  hyphens: none;
+}
+
+.cover-logo {
+  display: block;
+  margin: 0 0 auto;
+  max-width: 100%;
+  height: auto;
+}
+
+.cover-headline { margin-top: auto; }
+
+.cover-organisation {
+  font-family: var(--doc-font-heading);
+  font-size: 0.95em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--doc-accent);
+  margin-bottom: 1.2em;
+}
+
+.cover-title {
+  font-family: var(--doc-font-heading);
+  font-size: ${num(s ** 4, 3)}em;
+  font-weight: ${type.headingWeight};
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  color: var(--doc-heading);
+  text-wrap: balance;
+}
+
+.cover-subtitle {
+  font-family: var(--doc-font-heading);
+  font-size: ${num(s, 3)}em;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--doc-muted);
+  margin-top: 0.6em;
+  text-wrap: balance;
+}
+
+.cover-abstract {
+  margin-top: 2.4em;
+  padding-top: 1.4em;
+  border-top: 1px solid var(--doc-border);
+  max-width: 34em;
+  color: var(--doc-text);
+}
+
+.cover-abstract p { margin: 0 0 0.8em; }
+.cover-abstract p:last-child { margin-bottom: 0; }
+
+.cover-meta {
+  margin-top: auto;
+  padding-top: 2em;
+  font-family: var(--doc-font-heading);
+  font-size: 0.95em;
+  color: var(--doc-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4em 2em;
+}
+
+.cover-author { color: var(--doc-text); font-weight: 500; }
+
+/* --- layouts --- */
+
+.cover-centred { text-align: center; align-items: center; }
+.cover-centred .cover-abstract { text-align: left; }
+.cover-centred .cover-meta { justify-content: center; }
+.cover-centred .cover-logo { margin-inline: auto; }
+
+.cover-banner .cover-headline {
+  margin-top: 0;
+  padding: 1.6em 0 1.4em;
+  border-top: 4px solid var(--doc-accent);
+  border-bottom: 1px solid var(--doc-border);
+}
+.cover-banner .cover-abstract { border-top: 0; padding-top: 0; }
+
+.cover-minimal .cover-title { font-size: ${num(s ** 2, 3)}em; }
+.cover-minimal .cover-organisation { color: var(--doc-muted); }
+.cover-minimal .cover-abstract { border-top: 0; padding-top: 0; }`);
+  }
+
+  // --- table of contents --------------------------------------------------
+  if (config.toc.enabled) {
+    const toc = config.toc;
+
+    rules.push(`/* contents */
+.toc {
+  ${toc.breakAfter ? "break-after: page; page-break-after: always;" : ""}
+  hyphens: none;
+  text-align: left;
+}
+
+.toc-title {
+  font-family: var(--doc-font-heading);
+  font-size: ${num(s ** 2, 3)}em;
+  font-weight: ${type.headingWeight};
+  color: var(--doc-heading);
+  line-height: 1.25;
+  margin: 0 0 1.2em;
+}
+
+.toc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.toc-entry {
+  margin: 0 0 0.35em;
+  /* An entry split across a page break is unreadable on both halves. */
+  break-inside: avoid;
+}
+
+.toc-entry a {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  text-decoration: none;
+  color: var(--doc-text);
+}
+
+/* The page number. Only the layout engine knows it, so it is resolved from the
+   link target after pagination rather than written into the markup. */
+.toc-entry a::after {
+  content: target-counter(attr(href), page);
+  font-variant-numeric: tabular-nums;
+  color: var(--doc-muted);
+  white-space: nowrap;
+}
+
+.toc-number {
+  font-variant-numeric: tabular-nums;
+  color: var(--doc-muted);
+  flex: none;
+}
+
+.toc-text { flex: none; }
+
+.toc-leader {
+  flex: 1 1 auto;
+  min-width: 1.5em;
+  align-self: stretch;
+  ${
+    toc.dotLeaders
+      ? "border-bottom: 1px dotted var(--doc-border); margin-bottom: 0.28em;"
+      : ""
+  }
+}
+
+${
+  toc.pageNumbers
+    ? ""
+    : ".toc-entry a::after { content: none; } .toc-leader { border-bottom: 0; }"
+}
+
+/* Depth is expressed as indentation and weight, not as nested lists - a flat
+   list keeps every page number on the same right-hand edge. */
+.toc-level-1 { font-weight: 600; margin-top: 0.9em; }
+.toc-level-1:first-child { margin-top: 0; }
+.toc-level-2 { padding-left: 1.4em; }
+.toc-level-3 { padding-left: 2.8em; font-size: 0.95em; }
+.toc-level-4 { padding-left: 4.2em; font-size: 0.95em; }
+.toc-level-5,
+.toc-level-6 { padding-left: 5.6em; font-size: 0.92em; }`);
+  }
 
   // --- footnotes ----------------------------------------------------------
   rules.push(`/* footnotes */

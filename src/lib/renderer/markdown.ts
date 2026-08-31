@@ -331,12 +331,18 @@ function rehypeHeadings(
         }
         number = counters.slice(0, index + 1).join(".");
 
-        node.children.unshift({
-          type: "element",
-          tagName: "span",
-          properties: { className: ["heading-number"] },
-          children: [{ type: "text", value: number }],
-        });
+        // The trailing space is a real text node, not CSS margin, so that
+        // `string-set: content(text)` picks it up and a running head reads
+        // "3.2 District variation" instead of "3.2District variation".
+        node.children.unshift(
+          {
+            type: "element",
+            tagName: "span",
+            properties: { className: ["heading-number"] },
+            children: [{ type: "text", value: number }],
+          },
+          { type: "text", value: " " },
+        );
       }
 
       store.headings.push({ depth, text, number, id });

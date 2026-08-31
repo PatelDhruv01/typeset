@@ -97,10 +97,20 @@ describe("buildDocumentCss", () => {
       expect(out).toContain('"Quarterly Review" " - " "A. Nother"');
     });
 
-    it("maps {section} to the running string set by headings", () => {
+    it("maps {section} to the h1 running string, taken at the page start", () => {
       const out = css({ header: { enabled: true, center: "{section}" } });
-      expect(out).toContain("string(section-title)");
-      expect(out).toContain("string-set: section-title content(text)");
+      // `first` is the first value assigned on the page. Without it, a page
+      // opening a new section still showed the previous one.
+      expect(out).toContain("string(section-title, first)");
+      expect(out).toContain("h1 { string-set: section-title content(text); }");
+    });
+
+    it("maps {subsection} to h2, kept separate from {section}", () => {
+      // Having h1 and h2 write the same string made the head show whichever
+      // came last, so a page opening on a new h1 displayed the previous h2.
+      const out = css({ header: { enabled: true, center: "{subsection}" } });
+      expect(out).toContain("string(subsection-title, first)");
+      expect(out).toContain("h2 { string-set: subsection-title content(text); }");
     });
 
     it("emits nothing for a disabled slot", () => {
@@ -120,6 +130,87 @@ describe("buildDocumentCss", () => {
     it("escapes quotes in user text rather than breaking the stylesheet", () => {
       const out = css({ header: { enabled: true, left: 'The "Big" Report' } });
       expect(out).toContain('\\"Big\\"');
+    });
+  });
+
+  describe("justification", () => {
+    it("neutralises the text-align-last Paged.js inherits onto everything", () => {
+      // Paged.js marks split elements with
+      // [data-align-last-split-element="justify"] so a fragment's last visible
+      // line stays justified. text-align-last is inherited and the body wrapper
+      // is split on every page, so without this the last line of every
+      // paragraph, heading and cell came out stretched across the measure.
+      const out = css({ typography: { align: "justify" } });
+      expect(out).toContain("text-align-last: auto;");
+      expect(out).toMatch(/p, li, dd, dt, blockquote, figcaption, td, th, pre/);
+    });
+
+    it("never justifies code, whatever the body alignment", () => {
+      // text-align is inherited, so a justified body would stretch the spaces
+      // in wrapped code lines and destroy the author's alignment.
+      const out = css({ typography: { align: "justify" } });
+
+      // Find the standalone `pre` rule, not the `code, kbd, samp, pre` one.
+      const preRule = out
+        .split("}")
+        .map((chunk) => chunk.trim())
+        .find((chunk) => chunk.startsWith("pre {"));
+
+      expect(preRule).toBeDefined();
+      expect(preRule).toContain("text-align: left;");
+      expect(preRule).toContain("hyphens: none;");
+    });
+  });
+
+  describe("cover page", () => {
+    it("is absent unless enabled", () => {
+      expect(css()).not.toContain("@page cover");
+    });
+
+    it("gets a named page with every margin box blanked", () => {
+      // @page :first would also match the first content page in documents with
+      // no cover, so the cover needs a page of its own.
+      const out = css({ cover: { enabled: true } });
+      expect(out).toContain("@page cover");
+      expect(out).toContain("page: cover;");
+      for (const box of [
+        "@top-left",
+        "@top-center",
+        "@top-right",
+        "@bottom-left",
+        "@bottom-center",
+        "@bottom-right",
+      ]) {
+        expect(out).toContain(`${box} { content: none; }`);
+      }
+    });
+  });
+
+  describe("contents", () => {
+    it("is absent unless enabled", () => {
+      expect(css()).not.toContain(".toc-entry");
+    });
+
+    it("resolves page numbers from the link target after layout", () => {
+      // Only the layout engine knows which page a heading lands on, and adding
+      // the contents page changes the pagination it describes.
+      const out = css({ toc: { enabled: true } });
+      expect(out).toContain("content: target-counter(attr(href), page);");
+    });
+
+    it("drops leaders and numbers when they are switched off", () => {
+      const out = css({
+        toc: { enabled: true, pageNumbers: false, dotLeaders: false },
+      });
+      expect(out).toContain(".toc-entry a::after { content: none; }");
+      expect(out).not.toContain("border-bottom: 1px dotted var(--doc-border); margin-bottom");
+    });
+
+    it("only breaks the page after the contents when asked", () => {
+      expect(css({ toc: { enabled: true } })).toContain("break-after: page;");
+      expect(
+        css({ toc: { enabled: true, breakAfter: false } }),
+      ).not.toMatch(/\.toc \{[^}]*break-after: page/);
     });
   });
 

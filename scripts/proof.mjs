@@ -29,15 +29,16 @@ const CHROME =
     "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe",
   ].find((candidate) => fs.existsSync(candidate));
 
-const source = fs.readFileSync(
-  path.join(ROOT, "reference", "sample-technical.md"),
-  "utf8",
-);
+const sourceFile = process.env.PROOF_SOURCE ?? "sample-technical.md";
+const source = fs.readFileSync(path.join(ROOT, "reference", sourceFile), "utf8");
+const extraConfig = process.env.PROOF_CONFIG
+  ? JSON.parse(process.env.PROOF_CONFIG)
+  : undefined;
 
 const response = await fetch(`${ORIGIN}/api/render`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ source, preset, format: "html" }),
+  body: JSON.stringify({ source, preset, config: extraConfig, format: "html" }),
 });
 
 if (!response.ok) {

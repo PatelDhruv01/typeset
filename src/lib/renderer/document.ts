@@ -1,5 +1,7 @@
 import type { DocumentConfig } from "@/lib/config/schema";
 import { buildDocumentCss, type CssOptions } from "@/lib/renderer/css";
+import { renderCover } from "@/lib/renderer/cover";
+import { renderToc } from "@/lib/renderer/toc";
 import {
   renderMarkdown,
   type ExtractedHeading,
@@ -38,6 +40,10 @@ export type RenderedDocument = {
   wordCount: number;
   /** True when the document actually contains maths, so KaTeX can be skipped. */
   hasMath: boolean;
+  /** True when a cover page was actually produced, not merely requested. */
+  hasCover: boolean;
+  /** True when a contents page was actually produced. */
+  hasToc: boolean;
 };
 
 function escapeHtml(value: string): string {
@@ -139,7 +145,16 @@ export function renderDocument(
     { ...cssOptions, includeKatex: cssOptions.includeKatex ?? hasMath },
   );
 
-  const bodyHtml = `<div class="doc-body">\n${parsed.html}\n</div>`;
+  const cover = renderCover(config.cover, {
+    title,
+    subtitle,
+    author,
+    date,
+  });
+
+  const toc = renderToc(config.toc, parsed.headings);
+
+  const bodyHtml = `${cover}${toc}<div class="doc-body">${parsed.html}</div>`;
 
   const html = [
     "<!doctype html>",
@@ -174,5 +189,7 @@ export function renderDocument(
     frontMatter: parsed.frontMatter,
     wordCount: parsed.wordCount,
     hasMath,
+    hasCover: cover !== "",
+    hasToc: toc !== "",
   };
 }

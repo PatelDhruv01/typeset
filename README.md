@@ -125,7 +125,7 @@ The output filename is derived, not fixed: explicit config, then front matter
 - [x] **Phase 2** — Chromium PDF engine and download
 - [ ] **Phase 3** — Editor, preset cards, live paginated preview
 - [ ] **Phase 4** — Full customisation drawer
-- [ ] **Phase 5** — Cover page, table of contents, section numbering, watermark
+- [~] **Phase 5** — Cover page, contents and section numbering done; watermark pending
 - [ ] **Phase 6** — Mermaid diagrams, image handling (maths and callouts landed early, in Phase 1)
 - [ ] **Phase 7** — Saved presets, config sharing, batch conversion, deploy
 
@@ -144,6 +144,7 @@ scripts/
   sync-fonts.mjs        Copies woff2 out of @fontsource into public/fonts
   sync-styles.mjs       Bakes code themes and KaTeX CSS in, copies Paged.js
   proof.mjs             Screenshots a paginated page, to check running heads
+  diagnose-justify.mjs  Reports the alignment Chromium actually applied
 reference/
   convert.legacy.js     The original single-purpose script this grew from
   sample-technical.md   A deliberately hostile test document (1164 lines)
