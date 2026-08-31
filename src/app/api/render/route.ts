@@ -153,6 +153,7 @@ export async function POST(request: Request): Promise<Response> {
         // Surfaced so the UI can tell the user when a render was degraded.
         "X-Typeset-Pages": String(result.pageCount),
         "X-Typeset-Paginator": result.paginatedBy,
+        "X-Typeset-Toc-Entries": String(result.tocEntriesNumbered),
         "X-Typeset-Duration-Ms": String(result.durationMs),
         ...(result.fallbackReason
           ? { "X-Typeset-Fallback": encodeURIComponent(result.fallbackReason) }

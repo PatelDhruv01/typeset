@@ -7,6 +7,7 @@ import type { Page } from "puppeteer-core";
 import type { DocumentConfig } from "@/lib/config/schema";
 import { resolvePageSize } from "@/lib/config/page-sizes";
 import { renderDocument } from "@/lib/renderer/document";
+import { fillTocPageNumbers } from "@/lib/renderer/paged-hooks";
 import { inlineAssetOrKeep } from "@/lib/pdf/assets";
 import { getBrowser } from "@/lib/pdf/browser";
 
@@ -49,6 +50,8 @@ export type PdfRenderResult = {
   pageCount: number;
   /** How the document was paginated, so callers can report a degraded render. */
   paginatedBy: "pagedjs" | "chromium";
+  /** Contents entries that received a page number. 0 when there is no contents. */
+  tocEntriesNumbered: number;
   durationMs: number;
 };
 
@@ -206,10 +209,21 @@ export async function renderPdf(
     await waitForFonts(page);
 
     let paginatedBy: PdfRenderResult["paginatedBy"] = "chromium";
+    let tocEntriesNumbered = 0;
 
     if (!options.nativePagination) {
       await paginateWithPagedJs(page);
       paginatedBy = "pagedjs";
+
+      if (config.toc.enabled && config.toc.pageNumbers) {
+        // Resolved here rather than by target-counter in CSS: see
+        // fillTocPageNumbers. The slots are fixed width, so this cannot reflow.
+        tocEntriesNumbered = await page.evaluate(
+          fillTocPageNumbers,
+          config.structure.startPageNumber - 1,
+        );
+      }
+
       // Paged.js swaps the whole body for its own page boxes; give layout and
       // any late font swaps one frame to settle before printing.
       await waitForFonts(page);
@@ -253,6 +267,7 @@ export async function renderPdf(
       title: rendered.title,
       pageCount,
       paginatedBy,
+      tocEntriesNumbered,
       durationMs: Date.now() - startedAt,
     };
   } finally {

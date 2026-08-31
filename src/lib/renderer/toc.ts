@@ -6,10 +6,13 @@ import type { ExtractedHeading } from "@/lib/renderer/markdown";
  *
  * Page numbers are not written here - they cannot be. Only the layout engine
  * knows which page a heading lands on, and adding a contents page changes the
- * pagination it is describing. Each entry therefore carries a link, and the
- * stylesheet resolves it with `target-counter(attr(href), page)`, which Paged.js
- * evaluates after layout. That is a large part of why this project paginates
- * with Paged.js rather than with Chromium's print pipeline.
+ * pagination it is describing. Each entry carries a link plus an empty,
+ * fixed-width slot; fillTocPageNumbers() in paged-hooks.ts fills the slots once
+ * Paged.js has finished laying the document out.
+ *
+ * The CSS way - `content: target-counter(attr(href), page)` - is one line and
+ * far more elegant, but Paged.js resolves each occurrence with extra layout
+ * passes. On a 27-page document it took the render from 6 seconds to 38.
  */
 
 function escapeHtml(value: string): string {
@@ -47,9 +50,11 @@ export function renderToc(
         `<a href="#${escapeHtml(heading.id)}">`,
         number,
         `<span class="toc-text">${escapeHtml(heading.text)}</span>`,
-        // Flex spacer carrying the dot leader. The page number is appended by
-        // the stylesheet as ::after, so it stays a real layout-time value.
+        // Flex spacer carrying the dot leader, then the slot the page number
+        // is written into after layout. The slot has a reserved width, so
+        // filling it cannot reflow the page and invalidate its own answer.
         '<span class="toc-leader"></span>',
+        '<span class="toc-page"></span>',
         "</a>",
         "</li>",
       ].join("");

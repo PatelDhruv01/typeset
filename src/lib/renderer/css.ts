@@ -774,13 +774,18 @@ figcaption {
   color: var(--doc-text);
 }
 
-/* The page number. Only the layout engine knows it, so it is resolved from the
-   link target after pagination rather than written into the markup. */
-.toc-entry a::after {
-  content: target-counter(attr(href), page);
+/* The slot the page number is written into once Paged.js has laid the document
+   out (see fillTocPageNumbers). The reserved width is the important part: the
+   box is sized before the number exists, so writing it cannot reflow the page
+   and invalidate the very number being written. */
+.toc-page {
+  flex: none;
+  min-width: 2.2em;
+  text-align: right;
   font-variant-numeric: tabular-nums;
   color: var(--doc-muted);
   white-space: nowrap;
+${toc.pageNumbers ? "" : "  display: none;"}
 }
 
 .toc-number {
@@ -802,11 +807,7 @@ figcaption {
   }
 }
 
-${
-  toc.pageNumbers
-    ? ""
-    : ".toc-entry a::after { content: none; } .toc-leader { border-bottom: 0; }"
-}
+${toc.pageNumbers ? "" : ".toc-leader { border-bottom: 0; }"}
 
 /* Depth is expressed as indentation and weight, not as nested lists - a flat
    list keeps every page number on the same right-hand edge. */

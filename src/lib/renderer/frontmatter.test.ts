@@ -108,13 +108,15 @@ describe("renderToc", () => {
     expect(html).toContain('href="#findings"');
   });
 
-  it("does not write page numbers into the markup", () => {
-    // Only the layout engine knows them, and adding the contents page changes
-    // the pagination it describes. The stylesheet resolves them instead, so
-    // each anchor must end at the leader with no slot for a number.
+  it("leaves the page-number slot empty for the layout pass to fill", () => {
+    // Only the layout engine knows the page, and adding the contents page
+    // changes the pagination it describes. Each entry therefore ships an empty
+    // fixed-width slot that fillTocPageNumbers writes into afterwards.
     const html = toc(HEADINGS);
     for (const entry of html.split("<li").slice(1)) {
-      expect(entry).toContain('<span class="toc-leader"></span></a>');
+      expect(entry).toContain(
+        '<span class="toc-leader"></span><span class="toc-page"></span></a>',
+      );
     }
   });
 

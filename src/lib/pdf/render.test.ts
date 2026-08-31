@@ -198,6 +198,39 @@ describePdf("renderPdf", () => {
   );
 
   it(
+    "numbers the contents entries, and stays fast doing it",
+    async () => {
+      // Resolving these with CSS target-counter took a 27-page document from
+      // 6 seconds to 38 - past the timeout and into the Chromium fallback.
+      // They are filled from the finished layout instead. Both halves matter:
+      // the numbers must appear AND Paged.js must still have been used.
+      const result = await renderPdf(
+        LONG,
+        documentConfigSchema.parse({
+          toc: { enabled: true, maxDepth: 3 },
+          structure: { numberHeadings: true },
+        }),
+        { now: FIXED_NOW },
+      );
+
+      expect(result.paginatedBy).toBe("pagedjs");
+      expect(result.tocEntriesNumbered).toBeGreaterThan(50);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "reports no numbered entries when the contents is off",
+    async () => {
+      const result = await renderPdf(SHORT, configFromPreset("github"), {
+        now: FIXED_NOW,
+      });
+      expect(result.tocEntriesNumbered).toBe(0);
+    },
+    TIMEOUT,
+  );
+
+  it(
     "can bypass Paged.js and use Chromium's own pagination",
     async () => {
       const result = await renderPdf(SHORT, configFromPreset("github"), {

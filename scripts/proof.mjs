@@ -75,6 +75,29 @@ try {
   await page.addScriptTag({ url: "/pagedjs/paged.polyfill.min.js" });
   await page.waitForFunction(() => window.__proofDone, { timeout: 60_000 });
 
+  // Mirrors fillTocPageNumbers in src/lib/renderer/paged-hooks.ts. Duplicated
+  // rather than imported because this script is plain JS and that module is TS;
+  // the assertion below fails loudly if they ever disagree.
+  const numbered = await page.evaluate(() => {
+    const pageOfId = new Map();
+    for (const box of document.querySelectorAll(".pagedjs_page")) {
+      const number = box.dataset.pageNumber;
+      if (!number) continue;
+      for (const el of box.querySelectorAll("[id]")) {
+        if (el.id && !pageOfId.has(el.id)) pageOfId.set(el.id, number);
+      }
+    }
+    let filled = 0;
+    for (const anchor of document.querySelectorAll('.toc-entry a[href^="#"]')) {
+      const slot = anchor.querySelector(".toc-page");
+      const number = pageOfId.get(decodeURIComponent(anchor.getAttribute("href").slice(1)));
+      if (!slot || !number) continue;
+      slot.textContent = String(number);
+      filled += 1;
+    }
+    return filled;
+  });
+
   const summary = await page.evaluate((index) => {
     const pages = [...document.querySelectorAll(".pagedjs_page")];
     const target = pages[index];
@@ -99,6 +122,7 @@ try {
 
   console.log(`preset      : ${preset}`);
   console.log(`pages       : ${summary.total}`);
+  console.log(`toc numbers : ${numbered}`);
   console.log(
     `page ${pageIndex} boxes: ${
       summary.populated.length > 0

@@ -191,19 +191,29 @@ describe("buildDocumentCss", () => {
       expect(css()).not.toContain(".toc-entry");
     });
 
-    it("resolves page numbers from the link target after layout", () => {
-      // Only the layout engine knows which page a heading lands on, and adding
-      // the contents page changes the pagination it describes.
+    it("reserves a fixed-width slot for the page number", () => {
+      // The width has to be settled before the number exists, so writing it in
+      // cannot reflow the page and invalidate the number being written.
       const out = css({ toc: { enabled: true } });
-      expect(out).toContain("content: target-counter(attr(href), page);");
+      expect(out).toContain(".toc-page {");
+      expect(out).toContain("min-width: 2.2em;");
+    });
+
+    it("never uses target-counter, which is unusably slow at scale", () => {
+      // Paged.js resolves each target-counter with extra layout passes. On a
+      // 27-page document with 60 entries that took the render from 6s to 38s,
+      // past the timeout and into the Chromium fallback.
+      expect(css({ toc: { enabled: true } })).not.toContain("target-counter");
     });
 
     it("drops leaders and numbers when they are switched off", () => {
       const out = css({
         toc: { enabled: true, pageNumbers: false, dotLeaders: false },
       });
-      expect(out).toContain(".toc-entry a::after { content: none; }");
-      expect(out).not.toContain("border-bottom: 1px dotted var(--doc-border); margin-bottom");
+      expect(out).toContain("display: none;");
+      expect(out).not.toContain(
+        "border-bottom: 1px dotted var(--doc-border); margin-bottom",
+      );
     });
 
     it("only breaks the page after the contents when asked", () => {
