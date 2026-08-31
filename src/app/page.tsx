@@ -109,7 +109,7 @@ export default function Home() {
           className="h-full resize-none border-r border-border bg-card p-4 font-mono text-[13px] leading-relaxed text-foreground outline-none"
         />
 
-        <div className="h-full overflow-auto bg-muted p-4">
+        <div className="h-full min-h-0 bg-muted">
           {rendered.ok ? (
             <iframe
               // `key` forces a fresh document rather than a srcdoc swap, which
@@ -118,10 +118,13 @@ export default function Home() {
               key={presetId}
               title="Preview"
               srcDoc={rendered.value.html}
-              className="mx-auto block h-full w-full max-w-[820px] rounded-lg border border-border bg-white shadow-sm"
+              // No background or padding here on purpose: the document's own
+              // stylesheet draws the page and the surface behind it, so the
+              // preview shows exactly what the stylesheet says.
+              className="block h-full w-full border-0"
             />
           ) : (
-            <pre className="whitespace-pre-wrap rounded-lg border border-destructive/40 bg-destructive/5 p-4 font-mono text-xs text-destructive">
+            <pre className="m-4 whitespace-pre-wrap rounded-lg border border-destructive/40 bg-destructive/5 p-4 font-mono text-xs text-destructive">
               {rendered.message}
             </pre>
           )}

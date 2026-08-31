@@ -53,6 +53,39 @@ describe("buildDocumentCss", () => {
     });
   });
 
+  describe("screen fallback", () => {
+    // @page margins are inert until the document is paginated, so without this
+    // block the live preview shows text running to the very edge of the frame.
+    it("mirrors the page box for the unpaginated preview", () => {
+      const out = css({
+        page: { margins: { top: 10, right: 20, bottom: 30, left: 40 } },
+      });
+      expect(out).toContain(":root:not(.paginated) body");
+      expect(out).toContain("padding: 10mm 20mm 30mm 40mm;");
+      expect(out).toContain("max-width: 210mm;");
+    });
+
+    it("is scoped so Paged.js can switch it off and avoid double margins", () => {
+      const out = css();
+
+      // The bare body rule stays at zero padding. If the page box were applied
+      // there instead of under the guard, paginated output would get @page
+      // margins *and* body padding, and every margin would be doubled.
+      const start = out.indexOf("body {");
+      const bodyRule = out.slice(start, out.indexOf("}", start));
+      expect(bodyRule).toContain("padding: 0;");
+
+      const guard = out.indexOf(":root:not(.paginated) body");
+      expect(guard).toBeGreaterThan(-1);
+      expect(out.indexOf("padding: 25mm")).toBeGreaterThan(guard);
+    });
+
+    it("tracks orientation, like the page box does", () => {
+      const out = css({ page: { orientation: "landscape" } });
+      expect(out).toContain("max-width: 297mm;");
+    });
+  });
+
   describe("running heads and feet", () => {
     it("turns {page} and {pages} into live counters, not text", () => {
       const out = css({ footer: { enabled: true, right: "{page} / {pages}" } });

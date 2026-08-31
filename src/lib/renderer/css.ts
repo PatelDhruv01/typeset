@@ -264,6 +264,8 @@ html {
   background: var(--doc-page-bg);
 }
 
+@page { background: var(--doc-page-bg); }
+
 body {
   margin: 0;
   padding: 0;
@@ -281,6 +283,35 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   font-variant-numeric: tabular-nums;
+}`);
+
+  // Screen fallback.
+  //
+  // Every margin in this stylesheet lives in `@page`, which only applies once
+  // the document is actually paginated - when printing, or once Paged.js has
+  // laid it out. In a plain scrolling preview `@page` is inert, so the text
+  // would run to the very edge of the viewport with no margin at all.
+  //
+  // Mirroring the page box here makes the unpaginated preview look like the
+  // page it will become. Paged.js adds `.paginated` to the root element before
+  // it lays out, which switches the whole block off so the two never both
+  // apply and double the margins.
+  rules.push(`/* screen fallback - superseded by Paged.js pagination */
+@media screen {
+  :root:not(.paginated) {
+    /* A neutral desk shade derived from the page colour, so this works for a
+       dark page as well as a white one. */
+    background: color-mix(in srgb, var(--doc-page-bg) 86%, #808080);
+    padding: 24px 16px;
+  }
+
+  :root:not(.paginated) body {
+    max-width: ${num(size.width, 2)}mm;
+    min-height: ${num(size.height, 2)}mm;
+    margin: 0 auto;
+    padding: ${num(page.margins.top, 2)}mm ${num(page.margins.right, 2)}mm ${num(page.margins.bottom, 2)}mm ${num(page.margins.left, 2)}mm;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 12%), 0 8px 24px rgb(0 0 0 / 8%);
+  }
 }`);
 
   if (type.measure !== null) {
