@@ -7,6 +7,8 @@ import {
   PaginatedPreview,
   type PreviewStatus,
 } from "@/components/paginated-preview";
+import { SettingsPanel } from "@/components/settings/settings-panel";
+import { mergeConfig } from "@/lib/config/merge";
 import {
   configFromPreset,
   DEFAULT_PRESET_ID,
@@ -14,32 +16,22 @@ import {
   PRESET_IDS,
   type PresetId,
 } from "@/lib/config/presets";
+import {
+  documentConfigSchema,
+  type DocumentConfig,
+  type PartialDocumentConfig,
+} from "@/lib/config/schema";
 import { useDebouncedValue, useTheme } from "@/lib/hooks";
 import { absoluteAssetUrl } from "@/lib/renderer/asset-urls";
 import { renderDocument } from "@/lib/renderer/document";
 import { DEFAULT_SAMPLE, SAMPLES } from "@/lib/samples";
 
 /** Long enough that typing never triggers a layout; short enough to feel live. */
-const PREVIEW_DEBOUNCE_MS = 500;
+const SOURCE_DEBOUNCE_MS = 500;
+/** Shorter: settings changes are discrete, so the wait is more noticeable. */
+const CONFIG_DEBOUNCE_MS = 250;
 
 const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5] as const;
-
-function SunIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <circle cx="12" cy="12" r="4" />
-      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-    </svg>
-  );
-}
-
-function MoonIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
-    </svg>
-  );
-}
 
 type DownloadState =
   | { status: "idle" }
@@ -49,9 +41,14 @@ type DownloadState =
 
 export default function Home() {
   const [presetId, setPresetId] = useState<PresetId>(DEFAULT_PRESET_ID);
+  const [config, setConfig] = useState<DocumentConfig>(() =>
+    configFromPreset(DEFAULT_PRESET_ID),
+  );
   const [source, setSource] = useState(DEFAULT_SAMPLE.source);
   const [sourceName, setSourceName] = useState<string | undefined>(undefined);
+  const [showSettings, setShowSettings] = useState(false);
   const [paginate, setPaginate] = useState(true);
+  const [fellBackToContinuous, setFellBackToContinuous] = useState(false);
   const [zoom, setZoom] = useState(0.75);
   const [preview, setPreview] = useState<PreviewStatus>({ state: "idle" });
   const [download, setDownload] = useState<DownloadState>({ status: "idle" });
@@ -60,17 +57,48 @@ export default function Home() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const config = useMemo(() => configFromPreset(presetId), [presetId]);
+  /**
+   * Every settings change goes through the schema.
+   *
+   * Merging a partial and re-parsing means the config in state is always valid,
+   * so no component downstream has to defend against a half-typed colour or a
+   * cleared number field. An unparseable patch is dropped and the last good
+   * value stands.
+   */
+  const update = useCallback((patch: PartialDocumentConfig) => {
+    setConfig((previous) => {
+      try {
+        return documentConfigSchema.parse(mergeConfig(previous, patch));
+      } catch {
+        return previous;
+      }
+    });
+    setDownload({ status: "idle" });
+  }, []);
+
+  const applyPreset = useCallback((id: PresetId) => {
+    setPresetId(id);
+    setConfig(configFromPreset(id));
+    setDownload({ status: "idle" });
+  }, []);
+
+  // Provenance, so the panel can say "Report (modified)" and offer a reset.
+  const modified = useMemo(
+    () =>
+      JSON.stringify(config) !== JSON.stringify(configFromPreset(presetId)),
+    [config, presetId],
+  );
 
   // Rendering Markdown is fast; laying it out into pages is not. Debouncing
-  // here means the iframe is only rebuilt once the user pauses.
-  const settledSource = useDebouncedValue(source, PREVIEW_DEBOUNCE_MS);
+  // both inputs means the iframe is rebuilt only once the user pauses.
+  const settledSource = useDebouncedValue(source, SOURCE_DEBOUNCE_MS);
+  const settledConfig = useDebouncedValue(config, CONFIG_DEBOUNCE_MS);
 
   const rendered = useMemo(() => {
     try {
       return {
         ok: true as const,
-        value: renderDocument(settledSource, config, {
+        value: renderDocument(settledSource, settledConfig, {
           sourceName,
           // Absolute asset URLs: Paged.js resolves them against the srcdoc
           // frame's "about:srcdoc" location, where a same-origin path throws.
@@ -83,7 +111,7 @@ export default function Home() {
         message: error instanceof Error ? error.message : String(error),
       };
     }
-  }, [settledSource, config, sourceName]);
+  }, [settledSource, settledConfig, sourceName]);
 
   const openFile = useCallback(async (file: File) => {
     const text = await file.text();
@@ -92,16 +120,6 @@ export default function Home() {
     setDownload({ status: "idle" });
   }, []);
 
-  const handleDrop = useCallback(
-    (event: React.DragEvent) => {
-      event.preventDefault();
-      setDragging(false);
-      const file = event.dataTransfer.files[0];
-      if (file) void openFile(file);
-    },
-    [openFile],
-  );
-
   const handleDownload = useCallback(async () => {
     setDownload({ status: "working" });
 
@@ -109,7 +127,9 @@ export default function Home() {
       const response = await fetch("/api/render", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source, preset: presetId, sourceName }),
+        // The full config, not the preset id: customisations have to reach the
+        // renderer, and a complete config needs no preset to resolve against.
+        body: JSON.stringify({ source, config, sourceName }),
       });
 
       if (!response.ok) {
@@ -151,16 +171,13 @@ export default function Home() {
         message: error instanceof Error ? error.message : String(error),
       });
     }
-  }, [presetId, rendered, source, sourceName]);
+  }, [config, rendered, source, sourceName]);
 
   const zoomBy = useCallback((direction: 1 | -1) => {
     setZoom((current) => {
       const index = ZOOM_STEPS.indexOf(current as (typeof ZOOM_STEPS)[number]);
       const from = index === -1 ? 2 : index;
-      const next = Math.min(
-        ZOOM_STEPS.length - 1,
-        Math.max(0, from + direction),
-      );
+      const next = Math.min(ZOOM_STEPS.length - 1, Math.max(0, from + direction));
       return ZOOM_STEPS[next] ?? 1;
     });
   }, []);
@@ -173,12 +190,15 @@ export default function Home() {
         setDragging(true);
       }}
       onDragLeave={() => setDragging(false)}
-      onDrop={handleDrop}
+      onDrop={(event) => {
+        event.preventDefault();
+        setDragging(false);
+        const file = event.dataTransfer.files[0];
+        if (file) void openFile(file);
+      }}
     >
       <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-        <span className="mr-1 text-sm font-semibold tracking-tight">
-          Typeset
-        </span>
+        <span className="mr-1 text-sm font-semibold tracking-tight">Typeset</span>
 
         <input
           ref={fileInputRef}
@@ -220,14 +240,14 @@ export default function Home() {
         </select>
 
         {sourceName && (
-          <span className="max-w-[16rem] truncate font-mono text-[11px] text-muted-foreground">
+          <span className="max-w-[14rem] truncate font-mono text-[11px] text-muted-foreground">
             {sourceName}
           </span>
         )}
 
         <div className="ml-auto flex items-center gap-2">
           {download.status === "error" && (
-            <span className="max-w-[22rem] truncate text-[11px] text-destructive">
+            <span className="max-w-[20rem] truncate text-[11px] text-destructive">
               {download.message}
             </span>
           )}
@@ -245,6 +265,20 @@ export default function Home() {
             className="grid size-7 place-items-center rounded-md border border-input transition-colors hover:bg-surface-hover"
           >
             {theme === "dark" ? <MoonIcon /> : <SunIcon />}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowSettings((open) => !open)}
+            aria-pressed={showSettings}
+            aria-label="Customise"
+            className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
+              showSettings
+                ? "border-foreground bg-foreground text-background"
+                : "border-input hover:bg-surface-hover"
+            }`}
+          >
+            Customise{modified ? " ·" : ""}
           </button>
 
           <button
@@ -268,10 +302,7 @@ export default function Home() {
               title={PRESETS[id].bestFor}
               aria-label={`${PRESETS[id].name} preset`}
               aria-pressed={active}
-              onClick={() => {
-                setPresetId(id);
-                setDownload({ status: "idle" });
-              }}
+              onClick={() => applyPreset(id)}
               className={`shrink-0 rounded-md px-2.5 py-1 text-xs transition-colors ${
                 active
                   ? "bg-foreground text-background"
@@ -283,11 +314,21 @@ export default function Home() {
           );
         })}
         <span className="ml-2 hidden truncate text-[11px] text-muted-foreground lg:block">
+          {modified ? "Modified from " : ""}
           {PRESETS[presetId].tagline}
         </span>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+      {/* Only a wide viewport gets a third column. Below xl the settings panel
+          is a fixed overlay and does not take part in the grid, so the editor
+          and preview keep their halves. */}
+      <div
+        className={`grid min-h-0 flex-1 grid-cols-1 md:grid-cols-2 ${
+          showSettings
+            ? "xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_330px]"
+            : ""
+        }`}
+      >
         <div className="min-h-0 border-r border-border">
           <MarkdownEditor
             value={source}
@@ -304,9 +345,20 @@ export default function Home() {
             <PaginatedPreview
               html={rendered.value.html}
               paginate={paginate}
-              pageOffset={config.structure.startPageNumber - 1}
+              pageOffset={settledConfig.structure.startPageNumber - 1}
               zoom={zoom}
-              onStatus={setPreview}
+              onStatus={(status) => {
+                setPreview(status);
+                // A failed layout leaves the pane showing the previous pages,
+                // which would silently misrepresent the current document.
+                // Continuous is always correct, just unpaginated - better to
+                // show the right content in the wrong shape than the wrong
+                // content in the right one.
+                if (status.state === "error" && paginate) {
+                  setPaginate(false);
+                  setFellBackToContinuous(true);
+                }
+              }}
             />
           ) : (
             <pre className="m-4 whitespace-pre-wrap rounded-lg border border-destructive/40 bg-destructive/5 p-4 font-mono text-xs text-destructive">
@@ -320,6 +372,18 @@ export default function Home() {
             </div>
           )}
         </div>
+
+        {showSettings && (
+          <div className="fixed inset-y-0 right-0 z-40 w-[330px] max-w-[85vw] shadow-2xl xl:static xl:z-auto xl:col-start-3 xl:shadow-none">
+            <SettingsPanel
+              config={config}
+              onChange={update}
+              presetId={presetId}
+              modified={modified}
+              onResetPreset={() => applyPreset(presetId)}
+            />
+          </div>
+        )}
       </div>
 
       <footer className="flex shrink-0 flex-wrap items-center gap-3 border-t border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground">
@@ -339,6 +403,9 @@ export default function Home() {
         {preview.state === "error" && (
           <span className="text-destructive">{preview.message}</span>
         )}
+        {fellBackToContinuous && !paginate && (
+          <span className="text-warning">Showing continuous view</span>
+        )}
 
         <div className="ml-auto flex items-center gap-2">
           <div className="flex overflow-hidden rounded-md border border-input">
@@ -351,7 +418,10 @@ export default function Home() {
               <button
                 key={label}
                 type="button"
-                onClick={() => setPaginate(value)}
+                onClick={() => {
+                  setPaginate(value);
+                  setFellBackToContinuous(false);
+                }}
                 className={`px-2 py-0.5 transition-colors ${
                   paginate === value
                     ? "bg-foreground text-background"
@@ -395,5 +465,41 @@ export default function Home() {
         </div>
       )}
     </main>
+  );
+}
+
+function SunIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      aria-hidden
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+    >
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      aria-hidden
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
+    </svg>
   );
 }

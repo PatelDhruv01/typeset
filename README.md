@@ -124,7 +124,7 @@ The output filename is derived, not fixed: explicit config, then front matter
 - [x] **Phase 1** — `DocumentConfig` schema, renderer core, theme system
 - [x] **Phase 2** — Chromium PDF engine and download
 - [x] **Phase 3** — Editor, preset cards, live paginated preview
-- [ ] **Phase 4** — Full customisation drawer
+- [x] **Phase 4** — Full customisation drawer
 - [~] **Phase 5** — Cover page, contents and section numbering done; watermark pending
 - [ ] **Phase 6** — Mermaid diagrams, image handling (maths and callouts landed early, in Phase 1)
 - [ ] **Phase 7** — Saved presets, config sharing, batch conversion, deploy
@@ -141,6 +141,7 @@ src/
       generated/        Baked-in code themes and KaTeX CSS
     pdf/                Browser launch, asset inlining, the PDF engine
   components/           Editor and preview (both client-only)
+    settings/           Form primitives and the customisation panel
 scripts/
   sync-fonts.mjs        Copies woff2 out of @fontsource into public/fonts
   sync-styles.mjs       Bakes code themes and KaTeX CSS in, copies Paged.js
@@ -150,6 +151,15 @@ reference/
   convert.legacy.js     The original single-purpose script this grew from
   sample-technical.md   A deliberately hostile test document (1164 lines)
 ```
+
+### Known issue: preview re-layout
+
+The first pagination is reliable. Re-laying out after a settings change has
+failed to complete in testing, and the cause is not yet established — the
+browser session it was measured in had been driving Paged.js documents for
+hours, so the measurements are not trustworthy either way. When a layout does
+fail the pane falls back to the continuous view rather than showing stale pages,
+and the failed frame is destroyed so it cannot starve later attempts.
 
 ### Asset URLs
 

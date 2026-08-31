@@ -46,6 +46,18 @@ type Props = {
 /** Paged.js can sit on a pathological document; do not hang the UI on it. */
 const PAGINATION_TIMEOUT_MS = 25_000;
 
+/**
+ * Viewport height the layout frame is given while Paged.js works.
+ *
+ * This is not cosmetic. The frame used to be sized to its host, which after the
+ * first layout is the height of the whole paginated document - thousands of
+ * pixels. Laying out into a viewport that tall took Paged.js from 3 seconds to
+ * past its 25 second timeout, so the first render succeeded and every
+ * subsequent one failed. Pagination does not need a tall viewport: page boxes
+ * are sized from @page, and content below the fold still has valid geometry.
+ */
+const LAYOUT_VIEWPORT_PX = 1200;
+
 declare global {
   interface Window {
     PagedConfig?: unknown;
@@ -92,10 +104,11 @@ export function PaginatedPreview({
     // the layout hooks. The content is our own renderer output, and any raw
     // HTML in it has already been through the sanitiser.
     frame.setAttribute("sandbox", "allow-same-origin allow-scripts");
-    // Laid out at full size but hidden, so its measurements are real while the
-    // previous frame stays visible underneath.
+    // Hidden while it lays out, so the previous frame stays visible. The height
+    // is a fixed, modest value rather than 100% of the host - see
+    // LAYOUT_VIEWPORT_PX.
     frame.style.cssText =
-      "position:absolute;inset:0;display:block;width:100%;height:100%;border:0;visibility:hidden";
+      `position:absolute;top:0;left:0;display:block;width:100%;height:${LAYOUT_VIEWPORT_PX}px;border:0;visibility:hidden`;
     host.append(frame);
 
     const settle = (doc: Document) => {
@@ -166,9 +179,19 @@ export function PaginatedPreview({
         });
       } catch (error) {
         if (cancelled) return;
-        // Show the failed layout anyway: a wrong-looking preview is more useful
-        // than an empty pane, and the status bar says what went wrong.
-        settle(doc);
+
+        // Destroy the frame rather than showing it.
+        //
+        // A rejected promise does not stop Paged.js: on timeout its chunker is
+        // still looping, and it will keep looping for as long as the document
+        // exists. Leaving that frame in the DOM starved the main thread and made
+        // every *later* layout time out too - one failure and the preview never
+        // recovered. Removing the frame is the only way to end the loop.
+        //
+        // The previous frame is left in place, so the pane keeps showing the
+        // last good pages while the status bar explains what happened.
+        frame.remove();
+
         report({
           state: "error",
           message: error instanceof Error ? error.message : String(error),
@@ -183,8 +206,9 @@ export function PaginatedPreview({
     return () => {
       cancelled = true;
       frame.removeEventListener("load", onLoad);
-      // If this run never became visible, drop it now. If it did, the next
-      // run's settle() removes it once that one is ready.
+      // A superseded frame must go, or its Paged.js loop keeps running. Only a
+      // frame that has already been made visible is kept, and the next run's
+      // settle() removes that one once it has something to replace it with.
       if (frame.style.visibility === "hidden") frame.remove();
     };
   }, [html, paginate, pageOffset, report]);
@@ -244,7 +268,31 @@ function withBaseHref(html: string): string {
  */
 function runPagedJs(win: Window, doc: Document): Promise<void> {
   return new Promise((resolve, reject) => {
+    // Paged.js reports failure by simply never calling `after`, which surfaces
+    // as an unexplained timeout. Listening inside the frame turns that into the
+    // actual error message.
+    const onError = (event: ErrorEvent) => {
+      finish();
+      reject(new Error(`Paged.js: ${event.message}`));
+    };
+    const onRejection = (event: PromiseRejectionEvent) => {
+      const reason: unknown = event.reason;
+      finish();
+      reject(
+        new Error(
+          `Paged.js: ${reason instanceof Error ? reason.message : String(reason)}`,
+        ),
+      );
+    };
+
+    const finish = () => {
+      win.clearTimeout(timer);
+      win.removeEventListener("error", onError);
+      win.removeEventListener("unhandledrejection", onRejection);
+    };
+
     const timer = win.setTimeout(() => {
+      finish();
       reject(
         new Error(
           `Pagination took longer than ${PAGINATION_TIMEOUT_MS / 1000}s. ` +
@@ -252,6 +300,9 @@ function runPagedJs(win: Window, doc: Document): Promise<void> {
         ),
       );
     }, PAGINATION_TIMEOUT_MS);
+
+    win.addEventListener("error", onError);
+    win.addEventListener("unhandledrejection", onRejection);
 
     win.PagedConfig = {
       auto: true,
@@ -263,7 +314,7 @@ function runPagedJs(win: Window, doc: Document): Promise<void> {
         doc.documentElement.classList.add("paginated");
       },
       after: () => {
-        win.clearTimeout(timer);
+        finish();
         resolve();
       },
     };
@@ -271,7 +322,7 @@ function runPagedJs(win: Window, doc: Document): Promise<void> {
     const script = doc.createElement("script");
     script.src = PAGEDJS_URL;
     script.onerror = () => {
-      win.clearTimeout(timer);
+      finish();
       reject(new Error(`Could not load ${PAGEDJS_URL}. Run \`npm run assets\`.`));
     };
     doc.head.append(script);
