@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   ChipGroup,
   ColorInput,
   Field,
   FontSelect,
+  inputClass,
   NumberInput,
   Section,
   Segmented,
@@ -112,6 +113,64 @@ function LengthField({
         onChange={(next) => onCommit(toMm(next, unit))}
       />
     </Field>
+  );
+}
+
+/**
+ * Comma-separated keywords, committed on blur rather than on every keystroke.
+ *
+ * The natural implementation - split on comma, trim, drop empties, rejoin,
+ * call onChange - is lossy mid-edit: typing "alpha, " triggers that transform
+ * immediately, and dropping the empty trailing segment turns it back into
+ * "alpha" one keystroke after the user typed the separator, so the comma they
+ * just typed is erased before they can start the next word. Committing only on
+ * blur (or Enter) means the transform runs once, on a finished value, instead
+ * of fighting the user on every character.
+ *
+ * A top-level function so its draft state survives a parent re-render, same
+ * reasoning as LengthField above.
+ */
+function KeywordsField({
+  value,
+  onChange,
+}: {
+  value: readonly string[];
+  onChange: (value: string[]) => void;
+}) {
+  const [draft, setDraft] = useState(value.join(", "));
+  const isFocused = useRef(false);
+
+  useEffect(() => {
+    if (!isFocused.current) setDraft(value.join(", "));
+  }, [value]);
+
+  const commit = () => {
+    onChange(
+      draft
+        .split(",")
+        .map((keyword) => keyword.trim())
+        .filter(Boolean)
+        .slice(0, 30),
+    );
+  };
+
+  return (
+    <input
+      type="text"
+      value={draft}
+      onFocus={() => {
+        isFocused.current = true;
+      }}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        isFocused.current = false;
+        commit();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+      }}
+      className={inputClass}
+    />
   );
 }
 
@@ -1145,20 +1204,10 @@ export function SettingsPanel({
           ))}
 
           <Field label="Keywords" hint="Comma separated.">
-            <TextInput
-              value={config.output.metadata.keywords.join(", ")}
-              onChange={(value) =>
-                onChange({
-                  output: {
-                    metadata: {
-                      keywords: value
-                        .split(",")
-                        .map((keyword) => keyword.trim())
-                        .filter(Boolean)
-                        .slice(0, 30),
-                    },
-                  },
-                })
+            <KeywordsField
+              value={config.output.metadata.keywords}
+              onChange={(keywords) =>
+                onChange({ output: { metadata: { keywords } } })
               }
             />
           </Field>

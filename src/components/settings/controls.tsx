@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 /**
  * Form primitives for the settings panel.
@@ -45,7 +45,7 @@ export function Field({
   );
 }
 
-const inputClass =
+export const inputClass =
   "w-full rounded-md border border-input bg-card px-2 py-1 text-xs text-foreground outline-none transition-colors focus-visible:border-ring";
 
 export function TextInput({
@@ -144,6 +144,11 @@ export function FontSelect({
   );
 }
 
+/** Formats the way the field displays itself when the user is not typing. */
+function formatNumber(value: number): string {
+  return String(Number(value.toFixed(3)));
+}
+
 export function NumberInput({
   value,
   onChange,
@@ -161,20 +166,44 @@ export function NumberInput({
   unit?: string;
   id?: string;
 }) {
+  // The field shows its own draft text rather than being fully controlled by
+  // `value`. A number input reformatted on every keystroke - as this one used
+  // to be, via value={Number(value.toFixed(3))} - fights the user: typing the
+  // "." in "0.75" immediately parsed to 0.75... no, worse: after typing just
+  // "0.", Number("0.") is 0, so the field's value prop snapped back to "0"
+  // before "75" could be typed, and the decimal point never landed.
+  const [draft, setDraft] = useState(() => formatNumber(value));
+  const isFocused = useRef(false);
+
+  useEffect(() => {
+    if (!isFocused.current) setDraft(formatNumber(value));
+  }, [value]);
+
   return (
     <div className="flex items-center gap-1">
       <input
         id={id}
         type="number"
-        value={Number(value.toFixed(3))}
+        value={draft}
         min={min}
         max={max}
         step={step}
+        onFocus={() => {
+          isFocused.current = true;
+        }}
         onChange={(event) => {
-          const next = Number(event.target.value);
-          // An empty field parses to NaN. Ignoring it keeps the last valid
-          // value instead of throwing the whole config out of validation.
-          if (Number.isFinite(next)) onChange(next);
+          const raw = event.target.value;
+          setDraft(raw);
+          const next = Number(raw);
+          // Mid-edit states like "" or "-" parse to NaN or 0 in ways that would
+          // be wrong to commit; wait for something that actually means a number.
+          if (raw !== "" && raw !== "-" && Number.isFinite(next)) onChange(next);
+        }}
+        onBlur={() => {
+          isFocused.current = false;
+          // Whatever was left half-typed (or invalid) reverts to the last
+          // value that actually committed.
+          setDraft(formatNumber(value));
         }}
         className={`${inputClass} w-20 text-right tabular-nums`}
       />
@@ -295,6 +324,8 @@ export function Segmented<T extends string>({
  * A native swatch plus the hex text, because both are needed: the swatch for
  * picking and the text for pasting a brand colour someone sent you.
  */
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
 export function ColorInput({
   value,
   onChange,
@@ -305,6 +336,18 @@ export function ColorInput({
   label: string;
 }) {
   const id = useId();
+
+  // A local draft for the text field, for the same reason as NumberInput:
+  // fully controlling it by `value` while only calling onChange on a complete
+  // hex meant every incomplete keystroke - "#ff", "#ff0" while typing "#ff00ff"
+  // - was immediately overwritten back to the last full colour, so nothing
+  // typed there ever visibly landed.
+  const [draft, setDraft] = useState(value);
+  const isFocused = useRef(false);
+
+  useEffect(() => {
+    if (!isFocused.current) setDraft(value);
+  }, [value]);
 
   return (
     <div className="flex items-center gap-1.5">
@@ -318,13 +361,23 @@ export function ColorInput({
       />
       <input
         type="text"
-        value={value}
+        value={draft}
         aria-label={`${label} hex value`}
+        onFocus={() => {
+          isFocused.current = true;
+        }}
         onChange={(event) => {
-          const next = event.target.value.trim();
+          const next = event.target.value;
+          setDraft(next);
           // Only commit a complete 6-digit hex; the schema rejects anything
-          // else, and rejecting mid-typing would fight the user.
-          if (/^#[0-9a-fA-F]{6}$/.test(next)) onChange(next.toLowerCase());
+          // else, and a partial value has nothing sensible to become yet.
+          if (HEX_COLOR.test(next.trim())) onChange(next.trim().toLowerCase());
+        }}
+        onBlur={() => {
+          isFocused.current = false;
+          // Left incomplete - revert rather than leave a colour that never
+          // actually applied sitting in the field.
+          if (!HEX_COLOR.test(draft.trim())) setDraft(value);
         }}
         className={`${inputClass} w-20 font-mono uppercase`}
       />

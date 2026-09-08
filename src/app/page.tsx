@@ -239,11 +239,21 @@ export default function Home() {
           ))}
         </select>
 
-        {sourceName && (
-          <span className="max-w-[14rem] truncate font-mono text-[11px] text-muted-foreground">
-            {sourceName}
-          </span>
-        )}
+        {/* The output filename, editable in place. This is the fallback chain
+            output.fileName already implements - explicit override, else front
+            matter title, else the first heading, else the opened filename -
+            surfaced where it's actually useful, instead of only reachable via
+            Customise > Output. */}
+        <EditableFilename
+          value={
+            config.output.fileName ??
+            (rendered.ok
+              ? rendered.value.fileName
+              : (sourceName?.replace(/\.[^./]+$/, "") ?? "document"))
+          }
+          isOverridden={config.output.fileName !== null}
+          onCommit={(next) => update({ output: { fileName: next } })}
+        />
 
         <div className="ml-auto flex items-center gap-2">
           {download.status === "error" && (
@@ -313,17 +323,24 @@ export default function Home() {
             </button>
           );
         })}
-        <span className="ml-2 hidden truncate text-[11px] text-muted-foreground lg:block">
+        {/* ml-auto plus a rule of its own is the point: sitting flush after
+            the button row (as it did before) reads as an eighth, unlabelled
+            preset rather than a caption describing the one that's active. */}
+        <span className="ml-auto hidden truncate border-l border-border pl-3 text-[11px] italic text-muted-foreground xl:block">
           {modified ? "Modified from " : ""}
           {PRESETS[presetId].tagline}
         </span>
       </div>
 
       {/* Only a wide viewport gets a third column. Below xl the settings panel
-          is a fixed overlay and does not take part in the grid, so the editor
-          and preview keep their halves. */}
+          is an overlay and does not take part in the grid, so the editor and
+          preview keep their halves.
+          `relative` here is load-bearing: the overlay below is `absolute`
+          against *this* box, which already excludes the header and footer.
+          It used to be `fixed` against the viewport, which ignored the footer
+          entirely and sat on top of it (z-40) whenever the panel was open. */}
       <div
-        className={`grid min-h-0 flex-1 grid-cols-1 md:grid-cols-2 ${
+        className={`relative grid min-h-0 flex-1 grid-cols-1 md:grid-cols-2 ${
           showSettings
             ? "xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_330px]"
             : ""
@@ -374,7 +391,7 @@ export default function Home() {
         </div>
 
         {showSettings && (
-          <div className="fixed inset-y-0 right-0 z-40 w-[330px] max-w-[85vw] shadow-2xl xl:static xl:z-auto xl:col-start-3 xl:shadow-none">
+          <div className="absolute inset-y-0 right-0 z-40 w-[330px] max-w-[85vw] shadow-2xl xl:static xl:z-auto xl:col-start-3 xl:shadow-none">
             <SettingsPanel
               config={config}
               onChange={update}
@@ -465,6 +482,96 @@ export default function Home() {
         </div>
       )}
     </main>
+  );
+}
+
+/**
+ * The output filename, shown as plain text and turned into an input on click.
+ *
+ * A top-level function, not one nested inside Home: nested there, it would be a
+ * new component type on every render and React would unmount/remount it on
+ * each keystroke elsewhere in the app - the same bug LengthField had in the
+ * settings panel. Its edit state has to survive its parent re-rendering, so it
+ * owns that state itself rather than being fully controlled.
+ */
+function EditableFilename({
+  value,
+  isOverridden,
+  onCommit,
+}: {
+  /** The name to show while not editing - either an override or the derived one. */
+  value: string;
+  /** True when `value` is a user override rather than a derived name. */
+  isOverridden: boolean;
+  /** Called with the new override, or null to go back to the derived name. */
+  onCommit: (next: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  const startEditing = () => {
+    setDraft(value);
+    setEditing(true);
+  };
+
+  const commit = () => {
+    setEditing(false);
+    const trimmed = draft.trim();
+    if (trimmed === value) return; // Nothing actually changed.
+    onCommit(trimmed === "" ? null : trimmed);
+  };
+
+  if (editing) {
+    return (
+      <input
+        type="text"
+        autoFocus
+        value={draft}
+        onFocus={(event) => event.currentTarget.select()}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+          if (event.key === "Escape") {
+            setDraft(value);
+            setEditing(false);
+          }
+        }}
+        aria-label="Output filename"
+        className="min-w-0 max-w-[16rem] rounded border border-ring bg-card px-1.5 py-0.5 font-mono text-[11px] text-foreground outline-none"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={startEditing}
+      title="Click to rename the PDF"
+      className="group flex min-w-0 max-w-[16rem] items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
+    >
+      <span className="truncate">{value}.pdf</span>
+      {isOverridden && (
+        <span
+          role="button"
+          tabIndex={0}
+          title="Reset to the automatic name"
+          onClick={(event) => {
+            event.stopPropagation();
+            onCommit(null);
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.stopPropagation();
+            event.preventDefault();
+            onCommit(null);
+          }}
+          className="shrink-0 rounded px-1 text-muted-foreground/70 hover:bg-muted hover:text-foreground"
+        >
+          ×
+        </span>
+      )}
+    </button>
   );
 }
 
