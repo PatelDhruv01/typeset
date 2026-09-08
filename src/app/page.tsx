@@ -8,6 +8,7 @@ import {
   type PreviewStatus,
 } from "@/components/paginated-preview";
 import { SettingsPanel } from "@/components/settings/settings-panel";
+import { EditorToggleIcon, FolderIcon, Logo, SettingsIcon } from "@/components/icons";
 import { mergeConfig } from "@/lib/config/merge";
 import {
   configFromPreset,
@@ -21,7 +22,7 @@ import {
   type DocumentConfig,
   type PartialDocumentConfig,
 } from "@/lib/config/schema";
-import { useDebouncedValue, useTheme } from "@/lib/hooks";
+import { useDebouncedValue } from "@/lib/hooks";
 import { absoluteAssetUrl } from "@/lib/renderer/asset-urls";
 import { renderDocument } from "@/lib/renderer/document";
 import { DEFAULT_SAMPLE, SAMPLES } from "@/lib/samples";
@@ -32,6 +33,9 @@ const SOURCE_DEBOUNCE_MS = 500;
 const CONFIG_DEBOUNCE_MS = 250;
 
 const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5] as const;
+
+/** How long the editor/settings panel entrance animation runs - see globals.css. */
+const PANEL_ANIMATION = ".32s cubic-bezier(.16,1,.3,1) both";
 
 type DownloadState =
   | { status: "idle" }
@@ -46,6 +50,7 @@ export default function Home() {
   );
   const [source, setSource] = useState(DEFAULT_SAMPLE.source);
   const [sourceName, setSourceName] = useState<string | undefined>(undefined);
+  const [showEditor, setShowEditor] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [paginate, setPaginate] = useState(true);
   const [fellBackToContinuous, setFellBackToContinuous] = useState(false);
@@ -53,7 +58,6 @@ export default function Home() {
   const [preview, setPreview] = useState<PreviewStatus>({ state: "idle" });
   const [download, setDownload] = useState<DownloadState>({ status: "idle" });
   const [dragging, setDragging] = useState(false);
-  const [theme, toggleTheme] = useTheme();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -87,6 +91,16 @@ export default function Home() {
     () =>
       JSON.stringify(config) !== JSON.stringify(configFromPreset(presetId)),
     [config, presetId],
+  );
+
+  // Each preset's accent colour, for the small square dot in the preset row.
+  // Computed once - PRESET_IDS and configFromPreset never change.
+  const presetAccents = useMemo(
+    () =>
+      Object.fromEntries(
+        PRESET_IDS.map((id) => [id, configFromPreset(id).theme.accent]),
+      ) as Record<PresetId, string>,
+    [],
   );
 
   // Rendering Markdown is fast; laying it out into pages is not. Debouncing
@@ -197,8 +211,11 @@ export default function Home() {
         if (file) void openFile(file);
       }}
     >
-      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-        <span className="mr-1 text-sm font-semibold tracking-tight">Typeset</span>
+      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b-2 border-border px-4 py-2.5">
+        <div className="mr-2 flex items-center gap-2">
+          <Logo />
+          <span className="text-[17px] font-extrabold tracking-tight">Typeset</span>
+        </div>
 
         <input
           ref={fileInputRef}
@@ -215,15 +232,15 @@ export default function Home() {
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="rounded-md border border-input px-2.5 py-1 text-xs transition-colors hover:bg-surface-hover"
+          className="flex items-center gap-1.5 border border-input px-3 py-1.5 text-xs font-bold transition-colors hover:bg-surface-hover"
         >
-          Open file
+          <FolderIcon /> Open
         </button>
 
         <select
-          className="rounded-md border border-input bg-card px-2 py-1 text-xs text-foreground"
-          defaultValue={DEFAULT_SAMPLE.id}
           aria-label="Sample document"
+          className="h-[34px] border border-input bg-surface px-2 text-xs"
+          defaultValue={DEFAULT_SAMPLE.id}
           onChange={(event) => {
             const sample = SAMPLES.find((s) => s.id === event.target.value);
             if (!sample) return;
@@ -238,6 +255,8 @@ export default function Home() {
             </option>
           ))}
         </select>
+
+        <div className="flex-1" />
 
         {/* The output filename, editable in place. This is the fallback chain
             output.fileName already implements - explicit override, else front
@@ -255,54 +274,60 @@ export default function Home() {
           onCommit={(next) => update({ output: { fileName: next } })}
         />
 
-        <div className="ml-auto flex items-center gap-2">
-          {download.status === "error" && (
-            <span className="max-w-[20rem] truncate text-[11px] text-destructive">
-              {download.message}
-            </span>
-          )}
-          {download.status === "done" && (
-            <span className="font-mono text-[11px] text-muted-foreground">
-              saved · {download.pages}pp · {(download.ms / 1000).toFixed(1)}s
-              {download.degraded ? " · no running heads" : ""}
-            </span>
-          )}
+        <div className="mx-0.5 h-5 w-px shrink-0 bg-border" />
 
-          <button
-            type="button"
-            onClick={toggleTheme}
-            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} appearance`}
-            className="grid size-7 place-items-center rounded-md border border-input transition-colors hover:bg-surface-hover"
-          >
-            {theme === "dark" ? <MoonIcon /> : <SunIcon />}
-          </button>
+        {download.status === "error" && (
+          <span className="max-w-[20rem] truncate text-[11px] text-destructive">
+            {download.message}
+          </span>
+        )}
+        {download.status === "done" && (
+          <span className="font-mono text-[11px] text-muted-foreground">
+            saved · {download.pages}pp · {(download.ms / 1000).toFixed(1)}s
+            {download.degraded ? " · no running heads" : ""}
+          </span>
+        )}
 
-          <button
-            type="button"
-            onClick={() => setShowSettings((open) => !open)}
-            aria-pressed={showSettings}
-            aria-label="Customise"
-            className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
-              showSettings
-                ? "border-foreground bg-foreground text-background"
-                : "border-input hover:bg-surface-hover"
-            }`}
-          >
-            Customise{modified ? " ·" : ""}
-          </button>
+        <button
+          type="button"
+          onClick={() => setShowEditor((open) => !open)}
+          aria-pressed={showEditor}
+          title="Toggle editor"
+          className={`flex items-center border px-2.5 py-1.5 text-xs transition-colors ${
+            showEditor
+              ? "border-foreground bg-foreground text-background"
+              : "border-input hover:border-primary"
+          }`}
+        >
+          <EditorToggleIcon />
+        </button>
 
-          <button
-            type="button"
-            onClick={handleDownload}
-            disabled={download.status === "working" || !rendered.ok}
-            className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            {download.status === "working" ? "Rendering…" : "Download PDF"}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setShowSettings((open) => !open)}
+          aria-pressed={showSettings}
+          aria-label="Customise"
+          title="Customise"
+          className={`flex items-center gap-1.5 border px-3 py-1.5 text-xs font-bold transition-colors ${
+            showSettings
+              ? "border-foreground bg-foreground text-background"
+              : "border-input hover:border-primary"
+          }`}
+        >
+          <SettingsIcon /> Customise{modified ? " ·" : ""}
+        </button>
+
+        <button
+          type="button"
+          onClick={handleDownload}
+          disabled={download.status === "working" || !rendered.ok}
+          className="bg-primary px-4 py-2 text-xs font-bold text-primary-foreground transition-colors hover:bg-[#dd2b0f] disabled:opacity-45"
+        >
+          {download.status === "working" ? "Rendering…" : "Download PDF"}
+        </button>
       </header>
 
-      <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-3 py-1.5">
+      <div className="flex shrink-0 items-center gap-0.5 overflow-x-auto px-4">
         {PRESET_IDS.map((id) => {
           const active = id === presetId;
           return (
@@ -313,12 +338,16 @@ export default function Home() {
               aria-label={`${PRESETS[id].name} preset`}
               aria-pressed={active}
               onClick={() => applyPreset(id)}
-              className={`shrink-0 rounded-md px-2.5 py-1 text-xs transition-colors ${
+              className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-[12.5px] transition-colors ${
                 active
-                  ? "bg-foreground text-background"
-                  : "text-muted-foreground hover:bg-surface-hover hover:text-foreground"
+                  ? "border-primary font-bold text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
+              <span
+                className="size-[7px] shrink-0"
+                style={{ background: presetAccents[id] }}
+              />
               {PRESETS[id].name}
             </button>
           );
@@ -333,31 +362,33 @@ export default function Home() {
       </div>
 
       {/* Only a wide viewport gets a third column. Below xl the settings panel
-          is an overlay and does not take part in the grid, so the editor and
-          preview keep their halves.
+          is an overlay and does not take part in the flex row, so the editor
+          and preview keep their widths.
           `relative` here is load-bearing: the overlay below is `absolute`
-          against *this* box, which already excludes the header and footer.
-          It used to be `fixed` against the viewport, which ignored the footer
-          entirely and sat on top of it (z-40) whenever the panel was open. */}
-      <div
-        className={`relative grid min-h-0 flex-1 grid-cols-1 md:grid-cols-2 ${
-          showSettings
-            ? "xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_330px]"
-            : ""
-        }`}
-      >
-        <div className="min-h-0 border-r border-border">
-          <MarkdownEditor
-            value={source}
-            onChange={(next) => {
-              setSource(next);
-              setDownload({ status: "idle" });
-            }}
-            placeholder="Write Markdown here, or drop a .md file anywhere on the page."
-          />
-        </div>
+          against *this* box, which already excludes the header and footer. */}
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        {showEditor && (
+          <div
+            className="flex w-[400px] shrink-0 flex-col border-r-2 border-border bg-surface"
+            style={{ animation: `ts-in-left ${PANEL_ANIMATION}` }}
+          >
+            <div className="shrink-0 border-b border-border px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-muted-foreground">
+              Markdown
+            </div>
+            <div className="min-h-0 flex-1">
+              <MarkdownEditor
+                value={source}
+                onChange={(next) => {
+                  setSource(next);
+                  setDownload({ status: "idle" });
+                }}
+                placeholder="Write Markdown here, or drop a .md file anywhere on the page."
+              />
+            </div>
+          </div>
+        )}
 
-        <div className="relative min-h-0 bg-muted">
+        <div className="relative min-h-0 min-w-0 flex-1 bg-muted">
           {rendered.ok ? (
             <PaginatedPreview
               html={rendered.value.html}
@@ -378,20 +409,23 @@ export default function Home() {
               }}
             />
           ) : (
-            <pre className="m-4 whitespace-pre-wrap rounded-lg border border-destructive/40 bg-destructive/5 p-4 font-mono text-xs text-destructive">
+            <pre className="m-4 whitespace-pre-wrap border border-destructive/40 bg-destructive/5 p-4 font-mono text-xs text-destructive">
               {rendered.message}
             </pre>
           )}
 
           {preview.state === "laying-out" && paginate && (
-            <div className="pointer-events-none absolute right-3 top-3 rounded-md bg-card/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm">
+            <div className="pointer-events-none absolute right-3.5 top-3.5 border border-border bg-background px-2.5 py-1.5 text-[11px] shadow-sm">
               Laying out…
             </div>
           )}
         </div>
 
         {showSettings && (
-          <div className="absolute inset-y-0 right-0 z-40 w-[330px] max-w-[85vw] shadow-2xl xl:static xl:z-auto xl:col-start-3 xl:shadow-none">
+          <div
+            className="absolute inset-y-0 right-0 z-40 w-[380px] max-w-[85vw] shadow-2xl xl:static xl:z-auto xl:shadow-none"
+            style={{ animation: `ts-in-right ${PANEL_ANIMATION}` }}
+          >
             <SettingsPanel
               config={config}
               onChange={update}
@@ -403,17 +437,17 @@ export default function Home() {
         )}
       </div>
 
-      <footer className="flex shrink-0 flex-wrap items-center gap-3 border-t border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground">
+      <footer className="flex shrink-0 flex-wrap items-center gap-4 border-t-2 border-border px-4 py-1.5 font-mono text-[11px] text-muted-foreground">
         {rendered.ok && (
           <>
             <span>{rendered.value.wordCount.toLocaleString()} words</span>
             <span>{rendered.value.headings.length} headings</span>
-            <span className="truncate">{rendered.value.fileName}.pdf</span>
+            <span className="truncate opacity-70">{rendered.value.fileName}.pdf</span>
           </>
         )}
 
         {preview.state === "ready" && paginate && (
-          <span>
+          <span className="opacity-70">
             {preview.pages} pages · {(preview.ms / 1000).toFixed(1)}s
           </span>
         )}
@@ -421,17 +455,17 @@ export default function Home() {
           <span className="text-destructive">{preview.message}</span>
         )}
         {fellBackToContinuous && !paginate && (
-          <span className="text-warning">Showing continuous view</span>
+          <span className="text-destructive">Showing continuous view</span>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
-          <div className="flex overflow-hidden rounded-md border border-input">
+        <div className="ml-auto flex items-center gap-3">
+          <div className="flex border border-input">
             {(
               [
                 ["Pages", true],
                 ["Continuous", false],
               ] as const
-            ).map(([label, value]) => (
+            ).map(([label, value], index) => (
               <button
                 key={label}
                 type="button"
@@ -439,9 +473,9 @@ export default function Home() {
                   setPaginate(value);
                   setFellBackToContinuous(false);
                 }}
-                className={`px-2 py-0.5 transition-colors ${
+                className={`px-2.5 py-1 transition-colors ${index > 0 ? "border-l border-input" : ""} ${
                   paginate === value
-                    ? "bg-foreground text-background"
+                    ? "bg-primary text-primary-foreground"
                     : "hover:bg-surface-hover"
                 }`}
               >
@@ -450,12 +484,12 @@ export default function Home() {
             ))}
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => zoomBy(-1)}
               aria-label="Zoom out"
-              className="rounded border border-input px-1.5 transition-colors hover:bg-surface-hover"
+              className="border border-input px-2 py-0.5 transition-colors hover:bg-surface-hover"
             >
               −
             </button>
@@ -466,7 +500,7 @@ export default function Home() {
               type="button"
               onClick={() => zoomBy(1)}
               aria-label="Zoom in"
-              className="rounded border border-input px-1.5 transition-colors hover:bg-surface-hover"
+              className="border border-input px-2 py-0.5 transition-colors hover:bg-surface-hover"
             >
               +
             </button>
@@ -475,9 +509,14 @@ export default function Home() {
       </footer>
 
       {dragging && (
-        <div className="pointer-events-none fixed inset-0 z-50 grid place-items-center bg-background/80">
-          <div className="rounded-xl border-2 border-dashed border-primary px-8 py-6 text-sm font-medium">
-            Drop a Markdown file to open it
+        <div className="pointer-events-none fixed inset-0 z-50 grid place-items-center bg-background/85">
+          <div
+            className="border-2 border-dashed border-primary bg-background px-10 py-7 shadow-lg"
+            style={{ animation: "ts-pop .22s ease both" }}
+          >
+            <span className="text-[15px] font-extrabold">
+              Drop a Markdown file to open it
+            </span>
           </div>
         </div>
       )}
@@ -538,7 +577,7 @@ function EditableFilename({
           }
         }}
         aria-label="Output filename"
-        className="min-w-0 max-w-[16rem] rounded border border-ring bg-card px-1.5 py-0.5 font-mono text-[11px] text-foreground outline-none"
+        className="min-w-0 max-w-[16rem] border border-primary bg-surface px-2 py-1 font-mono text-[12px] text-foreground outline-none"
       />
     );
   }
@@ -548,7 +587,7 @@ function EditableFilename({
       type="button"
       onClick={startEditing}
       title="Click to rename the PDF"
-      className="group flex min-w-0 max-w-[16rem] items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
+      className="flex min-w-0 max-w-[16rem] items-center gap-1 px-2 py-1 font-mono text-[12px] text-foreground opacity-60 transition-opacity hover:opacity-100"
     >
       <span className="truncate">{value}.pdf</span>
       {isOverridden && (
@@ -566,47 +605,11 @@ function EditableFilename({
             event.preventDefault();
             onCommit(null);
           }}
-          className="shrink-0 rounded px-1 text-muted-foreground/70 hover:bg-muted hover:text-foreground"
+          className="shrink-0 px-1 hover:text-primary"
         >
           ×
         </span>
       )}
     </button>
-  );
-}
-
-function SunIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="14"
-      height="14"
-      aria-hidden
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-    >
-      <circle cx="12" cy="12" r="4" />
-      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-    </svg>
-  );
-}
-
-function MoonIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="14"
-      height="14"
-      aria-hidden
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
-    </svg>
   );
 }

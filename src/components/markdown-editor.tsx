@@ -89,9 +89,12 @@ const highlightStyle = HighlightStyle.define([
   { tag: tags.quote, color: "var(--muted-foreground)", fontStyle: "italic" },
   { tag: [tags.monospace, tags.content], color: "var(--foreground)" },
   { tag: tags.keyword, color: "var(--primary)" },
-  { tag: tags.string, color: "var(--success)" },
+  // Modernist is a mono-accent system - no second or third hue to spend on
+  // syntax highlighting. Strings get a subtle warm tint mixed from the one
+  // accent rather than a separate invented colour; numbers are plain ink.
+  { tag: tags.string, color: "color-mix(in srgb, var(--foreground) 75%, var(--primary) 25%)" },
   { tag: tags.comment, color: "var(--muted-foreground)", fontStyle: "italic" },
-  { tag: tags.number, color: "var(--warning)" },
+  { tag: tags.number, color: "var(--foreground)" },
   { tag: [tags.processingInstruction, tags.meta], color: "var(--muted-foreground)" },
   { tag: tags.list, color: "var(--primary)" },
 ]);

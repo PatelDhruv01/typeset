@@ -1,14 +1,18 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
-import Script from "next/script";
+import { Archivo, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
 // next/font downloads and self-hosts these at build time. That matters more
 // than it looks: the legacy script pulled fonts from Google's CDN at render
 // time, so a render box without egress silently fell back to Times New Roman.
-const inter = Inter({
+//
+// Archivo carries the whole app chrome - body and headings alike, per the
+// Modernist design system (it draws no distinction between the two). Weights
+// 400/600/800 match what the design's own font request asks for.
+const archivo = Archivo({
   subsets: ["latin"],
-  variable: "--font-inter",
+  weight: ["400", "600", "800"],
+  variable: "--font-archivo",
   display: "swap",
 });
 
@@ -32,18 +36,15 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.variable} ${jetbrainsMono.variable}`}>
-        {/* Applies the stored appearance before first paint. Without it the page
-            renders light and then flips, which is worse than either.
-            `beforeInteractive` rather than a bare <script>: React 19 does not
-            execute script tags rendered by a component on the client, and warns
-            about it. */}
-        <Script id="typeset-theme" strategy="beforeInteractive">
-          {`try{var t=localStorage.getItem("typeset:theme");if(t==="dark"||(!t&&matchMedia("(prefers-color-scheme: dark)").matches))document.documentElement.classList.add("dark")}catch(e){}`}
-        </Script>
-        {children}
-      </body>
+    // The font variables live on <html>, not <body>: `--font-sans`/`--font-mono`
+    // in globals.css are declared on `:root` (= <html>), and their value nests
+    // a var() reference to `--font-archivo`/`--font-jetbrains-mono`. Putting the
+    // font classes on <body> instead put that inner variable one element below
+    // :root, which made the whole chain fail to resolve - every themed font
+    // and, it turned out, every other @theme-derived token (colours, radii)
+    // silently fell back to its CSS-initial value. Same element, no ambiguity.
+    <html lang="en" className={`${archivo.variable} ${jetbrainsMono.variable}`}>
+      <body>{children}</body>
     </html>
   );
 }

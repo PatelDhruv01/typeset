@@ -52,3 +52,7 @@ yarn-error.log*
 # proof artefacts and rendered samples
 /reference/out-*.pdf
 /reference/proof-*.png
+
+# Claude Design handoff bundle - working reference, not shipped code
+/Markdown to PDF UI redesign-handoff.zip
+/.design-import/
