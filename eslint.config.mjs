@@ -12,6 +12,7 @@ const config = [
       // Vendored, minified or generated - not ours to lint.
       "reference/**",
       "public/**",
+      ".design-import/**",
       "src/lib/renderer/generated/**",
       "src/lib/fonts/font-files.generated.json",
     ],

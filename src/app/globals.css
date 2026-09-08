@@ -1,79 +1,53 @@
 @import "tailwindcss";
 
 /*
- * Design tokens.
+ * Design tokens — Modernist.
+ *
+ * Flat, architectural, set entirely in Archivo: a near-mono red on a warm
+ * off-white, zero corner radius, strong 2px rules. One fixed appearance by
+ * design — Modernist is deliberately not a themeable system, so there is no
+ * dark variant here (there was one, built for the previous look; it came out
+ * along with this token rewrite).
  *
  * Every colour in the UI is one of these semantic names - never a raw hex in a
- * component. That is what makes the dark theme a single block of overrides
- * instead of a hunt through every file.
+ * component.
  *
  * NOTE: these tokens theme the *application chrome*. The PDF's own theming is a
- * completely separate system (Phase 1) - a document must not change appearance
- * because the user toggled dark mode in the editor.
+ * completely separate system (see lib/renderer/css.ts) - a document must not
+ * change appearance because the app's own look changes.
  */
 
-@custom-variant dark (&:where(.dark, .dark *));
-
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.21 0.006 285.9);
+  --background: #f3f2f2;
+  --foreground: #201e1d;
 
-  --surface: oklch(0.985 0.001 286.4);
-  --surface-hover: oklch(0.967 0.001 286.4);
+  --surface: #eae9e9;
+  --surface-hover: color-mix(in srgb, var(--foreground) 6%, var(--background));
 
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.006 285.9);
+  --card: #eae9e9;
+  --card-foreground: #201e1d;
 
-  --muted: oklch(0.967 0.001 286.4);
-  --muted-foreground: oklch(0.552 0.016 285.9);
+  --muted: #eae7e7;
+  --muted-foreground: color-mix(in srgb, var(--foreground) 55%, transparent);
 
-  --border: oklch(0.92 0.004 286.3);
-  --input: oklch(0.92 0.004 286.3);
-  --ring: oklch(0.55 0.16 258);
+  --border: color-mix(in srgb, var(--foreground) 40%, transparent);
+  --input: color-mix(in srgb, var(--foreground) 40%, transparent);
+  --ring: #ec3013;
 
-  --primary: oklch(0.55 0.16 258);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary: #ec3013;
+  --primary-foreground: #f3f2f2;
 
-  --accent: oklch(0.967 0.001 286.4);
-  --accent-foreground: oklch(0.21 0.006 285.9);
+  --accent: #eae9e9;
+  --accent-foreground: #201e1d;
 
-  --destructive: oklch(0.577 0.245 27.3);
-  --destructive-foreground: oklch(0.985 0 0);
+  /* Modernist is explicitly a mono-accent system - "no second accent was
+     chosen." Its own guidance for small coloured text is to use a deep ramp
+     step rather than the accent itself, which is exactly what an error signal
+     needs anyway - so destructive is accent-700, not a second hue. */
+  --destructive: #ae1800;
+  --destructive-foreground: #f3f2f2;
 
-  --success: oklch(0.62 0.14 155);
-  --warning: oklch(0.72 0.16 78);
-
-  --radius: 0.625rem;
-}
-
-.dark {
-  --background: oklch(0.16 0.005 285.8);
-  --foreground: oklch(0.96 0.001 286.4);
-
-  --surface: oklch(0.20 0.006 285.9);
-  --surface-hover: oklch(0.25 0.007 286);
-
-  --card: oklch(0.20 0.006 285.9);
-  --card-foreground: oklch(0.96 0.001 286.4);
-
-  --muted: oklch(0.25 0.007 286);
-  --muted-foreground: oklch(0.68 0.012 286);
-
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 16%);
-  --ring: oklch(0.65 0.15 258);
-
-  --primary: oklch(0.65 0.15 258);
-  --primary-foreground: oklch(0.16 0.005 285.8);
-
-  --accent: oklch(0.25 0.007 286);
-  --accent-foreground: oklch(0.96 0.001 286.4);
-
-  --destructive: oklch(0.65 0.2 25);
-  --destructive-foreground: oklch(0.985 0 0);
-
-  --success: oklch(0.7 0.14 155);
-  --warning: oklch(0.78 0.15 78);
+  --radius: 0px;
 }
 
 /* Expose the tokens to Tailwind so `bg-surface`, `text-muted-foreground`,
@@ -96,16 +70,19 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
-  --color-success: var(--success);
-  --color-warning: var(--warning);
 
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, "SFMono-Regular", monospace;
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  /* Flattened to plain 0px rather than derived via calc(var(--radius) - Npx):
+     that formula goes negative once --radius is 0 (browsers clamp it, but
+     there is no reason to rely on that). Modernist's own token sheet confirms
+     there is no graduated scale here either - its --radius-sm/md/lg are all
+     0px too. */
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
 }
 
 @layer base {
@@ -126,4 +103,20 @@
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
+}
+
+/* — entrance animations — */
+/* Taken directly from the source design (Typeset.dc.html): editor and
+   settings panels slide in from their respective edges when they open. */
+@keyframes ts-in-left {
+  from { opacity: 0; transform: translateX(-14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes ts-in-right {
+  from { opacity: 0; transform: translateX(14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes ts-pop {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
 }

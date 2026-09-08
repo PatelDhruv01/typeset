@@ -116,14 +116,38 @@ export function PaginatedPreview({
 
       // Measured inside the frame, so the parent's zoom transform does not
       // affect the numbers.
+      //
+      // A paginated page is trusted on its own bounding rect, not blended with
+      // scrollWidth: `.pagedjs_page` is a fixed-size box (sized from `@page`),
+      // so its rect is the true page width regardless of how wide the iframe's
+      // own viewport happened to be during layout - and unlike scrollWidth, it
+      // is never inflated by <body>'s own default block-level sizing filling
+      // whatever pane the iframe was given. Blending in scrollWidth here used
+      // to stretch the whole preview to the pane's width instead of the page's
+      // the moment the pane was wider than a single page - a wide gutter of
+      // the iframe's own blank background to the right of every visible page.
+      // Unpaginated (Continuous) has no page box to measure, so it still needs
+      // scrollWidth - that mode's max-width is the document's own body rule,
+      // and scrollWidth is the only way to read it back.
       const page = doc.querySelector(".pagedjs_page");
       const width = Math.ceil(
-        Math.max(
-          page?.getBoundingClientRect().width ?? 0,
-          doc.documentElement.scrollWidth,
-        ),
+        page
+          ? page.getBoundingClientRect().width
+          : doc.documentElement.scrollWidth,
       );
       const height = Math.ceil(doc.documentElement.scrollHeight);
+
+      // The frame is sized to precisely fit its own content above, so it
+      // should never need to scroll itself - the outer `overflow-auto` host
+      // is the only scrollbar this preview is meant to have. Without this,
+      // a few pixels of rounding slop between the measurement above and the
+      // frame's final layout (moving from `position: absolute` to `static`,
+      // fonts settling, sub-pixel line heights) is sometimes just enough to
+      // make the frame's own document think it overflows itself, drawing a
+      // second, redundant scrollbar right against the page's own edge - not
+      // at the pane's edge where the real one belongs.
+      doc.documentElement.style.overflow = "hidden";
+      doc.body.style.overflow = "hidden";
 
       for (const child of [...host.children]) {
         if (child !== frame) child.remove();
