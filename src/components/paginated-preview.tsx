@@ -38,10 +38,58 @@ type Props = {
   paginate: boolean;
   /** structure.startPageNumber - 1. */
   pageOffset: number;
-  /** 1 = actual size. */
-  zoom: number;
+  /** 1 = actual size; "fit" scales the page to the pane's width. */
+  zoom: number | "fit";
+  /** Upper bound for "fit", so a wide monitor does not blow a page up. */
+  maxFitZoom?: number;
+  /** The scale actually applied - the number to show in a zoom control. */
+  onEffectiveZoom?: (zoom: number) => void;
+  /** Space kept clear below the last page, for a floating toolbar. */
+  insetBottom?: number;
   onStatus?: (status: PreviewStatus) => void;
 };
+
+/**
+ * Presentation-only styles for the preview frame, never part of the document
+ * itself (the PDF renderer never sees them): the app's canvas shows through
+ * behind the pages, and each page is a separate sheet with a gap and a shadow.
+ * Without this the frame's page-coloured background ran every page into the
+ * next, so a multi-page document read as one endless sheet.
+ *
+ * Added to the frame only after layout (see applyPreviewChrome): Paged.js
+ * rewrites every stylesheet present when it starts, and drops screen-only
+ * rules as it does - which is precisely what these are.
+ */
+const PREVIEW_CHROME = `
+:root { color-scheme: light; }
+html, body { background: transparent !important; }
+html.paginated body { margin: 0; }
+.pagedjs_pages {
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: fit-content !important;
+  margin: 0 auto;
+  padding: 20px;
+}
+.pagedjs_page {
+  margin: 0 !important;
+  background-color: var(--doc-page-bg);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.10), 0 10px 28px -8px rgb(0 0 0 / 0.24);
+}
+:root:not(.paginated) body {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.10), 0 10px 28px -8px rgb(0 0 0 / 0.24);
+}
+`;
+
+function applyPreviewChrome(doc: Document) {
+  if (doc.querySelector("style[data-preview-chrome]")) return;
+  const style = doc.createElement("style");
+  style.dataset.previewChrome = "";
+  style.textContent = PREVIEW_CHROME;
+  doc.head.append(style);
+}
 
 /** Paged.js can sit on a pathological document; do not hang the UI on it. */
 const PAGINATION_TIMEOUT_MS = 25_000;
@@ -69,9 +117,26 @@ export function PaginatedPreview({
   paginate,
   pageOffset,
   zoom,
+  maxFitZoom = 1,
+  onEffectiveZoom,
+  insetBottom = 0,
   onStatus,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // The pane's usable width, for "fit". Tracked rather than read once: the
+  // pane resizes with the window, the splitter, and the settings panel.
+  const [paneWidth, setPaneWidth] = useState(0);
+
+  useEffect(() => {
+    const pane = scrollRef.current;
+    if (!pane) return;
+    const observer = new ResizeObserver(() => setPaneWidth(pane.clientWidth));
+    observer.observe(pane);
+    setPaneWidth(pane.clientWidth);
+    return () => observer.disconnect();
+  }, []);
 
   // The laid-out size in CSS pixels, measured after pagination. The frame has
   // to be as wide as the page box, not as wide as the pane: an A4 page is 794px
@@ -107,8 +172,11 @@ export function PaginatedPreview({
     // Hidden while it lays out, so the previous frame stays visible. The height
     // is a fixed, modest value rather than 100% of the host - see
     // LAYOUT_VIEWPORT_PX.
+    // color-scheme matches the document's own: when an iframe's scheme differs
+    // from its document's, Chrome paints an opaque backdrop behind it - a white
+    // slab around the pages whenever the app itself is in dark mode.
     frame.style.cssText =
-      `position:absolute;top:0;left:0;display:block;width:100%;height:${LAYOUT_VIEWPORT_PX}px;border:0;visibility:hidden`;
+      `position:absolute;top:0;left:0;display:block;width:100%;height:${LAYOUT_VIEWPORT_PX}px;border:0;visibility:hidden;color-scheme:light`;
     host.append(frame);
 
     const settle = (doc: Document) => {
@@ -129,10 +197,12 @@ export function PaginatedPreview({
       // Unpaginated (Continuous) has no page box to measure, so it still needs
       // scrollWidth - that mode's max-width is the document's own body rule,
       // and scrollWidth is the only way to read it back.
-      const page = doc.querySelector(".pagedjs_page");
+      // The pages' container is fit-content wide (see PREVIEW_CHROME), so its
+      // rect is the page width plus the gutter its shadow needs.
+      const pages = doc.querySelector(".pagedjs_pages");
       const width = Math.ceil(
-        page
-          ? page.getBoundingClientRect().width
+        pages
+          ? pages.getBoundingClientRect().width
           : doc.documentElement.scrollWidth,
       );
       const height = Math.ceil(doc.documentElement.scrollHeight);
@@ -173,8 +243,30 @@ export function PaginatedPreview({
       // report zero pages. Every rendered document contains .doc-body.
       if (!doc.querySelector(".doc-body")) return;
 
+      // Clicking a page moves keyboard focus into this frame, whose key
+      // presses never reach the app's window - so Ctrl+S, Ctrl+K and the rest
+      // went dead until the user clicked back out. Forward shortcuts up, and
+      // honour the app's preventDefault so Ctrl+S doesn't also open the
+      // browser's own Save dialog.
+      win.addEventListener("keydown", (event) => {
+        if (!event.ctrlKey && !event.metaKey && event.key !== "?") return;
+        const forwarded = new KeyboardEvent("keydown", {
+          key: event.key,
+          code: event.code,
+          ctrlKey: event.ctrlKey,
+          metaKey: event.metaKey,
+          shiftKey: event.shiftKey,
+          altKey: event.altKey,
+          bubbles: true,
+          cancelable: true,
+        });
+        window.dispatchEvent(forwarded);
+        if (forwarded.defaultPrevented) event.preventDefault();
+      });
+
       try {
         if (!paginate) {
+          applyPreviewChrome(doc);
           settle(doc);
           report({
             state: "ready",
@@ -188,6 +280,7 @@ export function PaginatedPreview({
         await runPagedJs(win, doc);
         if (cancelled) return;
 
+        applyPreviewChrome(doc);
         const tocEntries = fillTocPageNumbers(pageOffset, doc);
         const pages = countPages(doc);
 
@@ -225,7 +318,7 @@ export function PaginatedPreview({
 
     report({ state: "laying-out" });
     frame.addEventListener("load", onLoad);
-    frame.srcdoc = withBaseHref(html);
+    frame.srcdoc = preparePreviewHtml(html);
 
     return () => {
       cancelled = true;
@@ -237,8 +330,20 @@ export function PaginatedPreview({
     };
   }, [html, paginate, pageOffset, report]);
 
+  const effectiveZoom =
+    zoom === "fit"
+      ? size && paneWidth > 0
+        ? Math.max(0.2, Math.min(maxFitZoom, paneWidth / size.width))
+        : 1
+      : zoom;
+
+  const zoomRef = useLatestRef(onEffectiveZoom);
+  useEffect(() => {
+    zoomRef.current?.(effectiveZoom);
+  }, [effectiveZoom, zoomRef]);
+
   return (
-    <div className="h-full overflow-auto p-4">
+    <div ref={scrollRef} className="h-full overflow-auto overscroll-contain">
       {/* Two boxes: the outer one occupies the *scaled* size so the scroll
           container measures it correctly, while the inner one keeps its real
           pixel size and is transformed. A transform does not change layout
@@ -246,9 +351,9 @@ export function PaginatedPreview({
           leave a gap. */}
       <div
         style={{
-          width: size ? size.width * zoom : "100%",
-          height: size ? size.height * zoom : "100%",
-          margin: "0 auto",
+          width: size ? size.width * effectiveZoom : "100%",
+          height: size ? size.height * effectiveZoom : "100%",
+          margin: `0 auto ${insetBottom}px`,
         }}
       >
         <div
@@ -259,7 +364,7 @@ export function PaginatedPreview({
             height: size ? size.height : "100%",
             // Scaling the frame rather than the document keeps page geometry in
             // real millimetres; only the presentation is zoomed.
-            transform: zoom === 1 ? undefined : `scale(${zoom})`,
+            transform: effectiveZoom === 1 ? undefined : `scale(${effectiveZoom})`,
             transformOrigin: "top left",
           }}
         />
@@ -269,15 +374,15 @@ export function PaginatedPreview({
 }
 
 /**
- * Give the preview document a real base URL.
+ * Give the preview document a real base URL, and the preview-only chrome.
  *
- * Belt and braces rather than the fix: a srcdoc iframe has
+ * The base tag is belt and braces rather than the fix: a srcdoc iframe has
  * `document.baseURI === "about:srcdoc"`, but Paged.js resolves stylesheet URLs
  * against `window.location.href`, not baseURI - which is why the stylesheet's
  * asset URLs are made absolute instead (see lib/renderer/asset-urls.ts). The
  * base tag still matters for anything else that resolves relatively.
  */
-function withBaseHref(html: string): string {
+function preparePreviewHtml(html: string): string {
   const base = `<base href="${window.location.origin}/">`;
   return html.includes("<head>")
     ? html.replace("<head>", `<head>${base}`)

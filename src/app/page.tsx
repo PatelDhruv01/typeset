@@ -1,119 +1,144 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import {
+  ChevronDown,
+  FileUp,
+  Palette,
+  PanelLeft,
+  PanelLeftClose,
+  RotateCcw,
+  Search,
+  SlidersHorizontal,
+} from "lucide-react";
 
-import { MarkdownEditor } from "@/components/markdown-editor";
-import {
-  PaginatedPreview,
-  type PreviewStatus,
-} from "@/components/paginated-preview";
+import { CommandPalette } from "@/components/app/command-palette";
+import { DocumentsMenu } from "@/components/app/documents-menu";
+import { EditorPane } from "@/components/app/editor-pane";
+import { ExportButton } from "@/components/app/export-button";
+import { Logo } from "@/components/app/logo";
+import { MobileTabBar, type MobileView } from "@/components/app/mobile-tab-bar";
+import { MoreMenu } from "@/components/app/more-menu";
+import { PresetGallery } from "@/components/app/preset-gallery";
+import { PreviewPane, type Zoom } from "@/components/app/preview-pane";
+import { ShortcutsDialog } from "@/components/app/shortcuts-dialog";
+import { Splitter } from "@/components/app/splitter";
+import { StatusBar } from "@/components/app/status-bar";
+import type { ClipboardPayload, EditorHandle } from "@/components/markdown-editor";
+import type { PreviewStatus } from "@/components/paginated-preview";
 import { SettingsPanel } from "@/components/settings/settings-panel";
-import { EditorToggleIcon, FolderIcon, Logo, SettingsIcon } from "@/components/icons";
-import { mergeConfig } from "@/lib/config/merge";
-import {
-  configFromPreset,
-  DEFAULT_PRESET_ID,
-  PRESETS,
-  PRESET_IDS,
-  type PresetId,
-} from "@/lib/config/presets";
-import {
-  documentConfigSchema,
-  type DocumentConfig,
-  type PartialDocumentConfig,
-} from "@/lib/config/schema";
+import { Button } from "@/components/ui/button";
+import { Dialog, SheetContent } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Segmented } from "@/components/ui/segmented";
+import { Tip } from "@/components/ui/tooltip";
+import { deriveTitle } from "@/lib/app/documents";
+import { exportMarkdown, exportPdf, exportStandaloneHtml } from "@/lib/app/export";
+import { hasModKey, useLayout, useMediaQuery, useModKey, useWideDesktop } from "@/lib/app/media";
+import { setThemePreference } from "@/lib/app/theme";
+import { useWorkspace } from "@/lib/app/use-workspace";
+import { cn } from "@/lib/cn";
+import { PRESETS } from "@/lib/config/presets";
 import { useDebouncedValue } from "@/lib/hooks";
+import { clipboardToMarkdown, hasChatbotArtefacts, readClipboard } from "@/lib/paste/clipboard";
 import { absoluteAssetUrl } from "@/lib/renderer/asset-urls";
-import { renderDocument } from "@/lib/renderer/document";
-import { DEFAULT_SAMPLE, SAMPLES } from "@/lib/samples";
+import { renderDocument, toSafeFileName } from "@/lib/renderer/document";
+import { SAMPLES } from "@/lib/samples";
 
 /** Long enough that typing never triggers a layout; short enough to feel live. */
-const SOURCE_DEBOUNCE_MS = 500;
+const SOURCE_DEBOUNCE_MS = 450;
 /** Shorter: settings changes are discrete, so the wait is more noticeable. */
-const CONFIG_DEBOUNCE_MS = 250;
+const CONFIG_DEBOUNCE_MS = 200;
 
-const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5] as const;
+const EDITOR_WIDTH_KEY = "typeset:editor-width";
+const DEFAULT_EDITOR_WIDTH = 460;
+const MIN_EDITOR_WIDTH = 300;
 
-/** How long the editor/settings panel entrance animation runs - see globals.css. */
-const PANEL_ANIMATION = ".32s cubic-bezier(.16,1,.3,1) both";
+function readEditorWidth(): number {
+  if (typeof window === "undefined") return DEFAULT_EDITOR_WIDTH;
+  try {
+    const stored = Number(window.localStorage.getItem(EDITOR_WIDTH_KEY));
+    return Number.isFinite(stored) && stored >= MIN_EDITOR_WIDTH ? stored : DEFAULT_EDITOR_WIDTH;
+  } catch {
+    return DEFAULT_EDITOR_WIDTH;
+  }
+}
 
-type DownloadState =
-  | { status: "idle" }
-  | { status: "working" }
-  | { status: "done"; pages: number; ms: number; degraded: boolean }
-  | { status: "error"; message: string };
+/** True when the event target takes text input of its own. */
+function isEditable(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable ||
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT"
+  );
+}
+
+const MARKDOWN_FILE = /\.(?:md|markdown|mdx|txt)$/i;
+
+/** Shown while hydrating, identical on server and client. */
+function AppSkeleton() {
+  return (
+    <div className="flex h-dvh flex-col bg-background">
+      <header className="flex h-14 shrink-0 items-center border-b border-border bg-surface px-4">
+        <Logo />
+      </header>
+      <div className="min-h-0 flex-1 bg-canvas" />
+    </div>
+  );
+}
 
 export default function Home() {
-  const [presetId, setPresetId] = useState<PresetId>(DEFAULT_PRESET_ID);
-  const [config, setConfig] = useState<DocumentConfig>(() =>
-    configFromPreset(DEFAULT_PRESET_ID),
-  );
-  const [source, setSource] = useState(DEFAULT_SAMPLE.source);
-  const [sourceName, setSourceName] = useState<string | undefined>(undefined);
+  const workspace = useWorkspace();
+  const { hydrated, document: doc } = workspace;
+
+  const layout = useLayout();
+  const wide = useWideDesktop();
+  const modKey = useModKey();
+  // Keyboard hints only for people with a keyboard and a mouse in front of them.
+  const finePointer = useMediaQuery("(hover: hover) and (pointer: fine)", true);
+
+  const [view, setView] = useState<MobileView>("write");
   const [showEditor, setShowEditor] = useState(true);
-  const [showSettings, setShowSettings] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [paginate, setPaginate] = useState(true);
-  const [fellBackToContinuous, setFellBackToContinuous] = useState(false);
-  const [zoom, setZoom] = useState(0.75);
+  const [zoom, setZoom] = useState<Zoom>("fit");
+  const [effectiveZoom, setEffectiveZoom] = useState(1);
   const [preview, setPreview] = useState<PreviewStatus>({ state: "idle" });
-  const [download, setDownload] = useState<DownloadState>({ status: "idle" });
+  const [exporting, setExporting] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [editorWidth, setEditorWidth] = useState(readEditorWidth);
 
+  const editorRef = useRef<EditorHandle | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const exportingRef = useRef(false);
+  // For the "Try again" button on a failed download, which outlives the
+  // render that created it and must retry with the document as it is now.
+  const retryDownloadRef = useRef<() => void>(() => {});
 
-  /**
-   * Every settings change goes through the schema.
-   *
-   * Merging a partial and re-parsing means the config in state is always valid,
-   * so no component downstream has to defend against a half-typed colour or a
-   * cleared number field. An unparseable patch is dropped and the last good
-   * value stands.
-   */
-  const update = useCallback((patch: PartialDocumentConfig) => {
-    setConfig((previous) => {
-      try {
-        return documentConfigSchema.parse(mergeConfig(previous, patch));
-      } catch {
-        return previous;
-      }
-    });
-    setDownload({ status: "idle" });
-  }, []);
+  const isDesktop = layout === "desktop";
+  const isPhone = layout === "phone";
+  const settingsDocked = isDesktop && wide;
+  const empty = doc.source.trim() === "";
 
-  const applyPreset = useCallback((id: PresetId) => {
-    setPresetId(id);
-    setConfig(configFromPreset(id));
-    setDownload({ status: "idle" });
-  }, []);
-
-  // Provenance, so the panel can say "Report (modified)" and offer a reset.
-  const modified = useMemo(
-    () =>
-      JSON.stringify(config) !== JSON.stringify(configFromPreset(presetId)),
-    [config, presetId],
-  );
-
-  // Each preset's accent colour, for the small square dot in the preset row.
-  // Computed once - PRESET_IDS and configFromPreset never change.
-  const presetAccents = useMemo(
-    () =>
-      Object.fromEntries(
-        PRESET_IDS.map((id) => [id, configFromPreset(id).theme.accent]),
-      ) as Record<PresetId, string>,
-    [],
-  );
+  // --- rendering ------------------------------------------------------------
 
   // Rendering Markdown is fast; laying it out into pages is not. Debouncing
-  // both inputs means the iframe is rebuilt only once the user pauses.
-  const settledSource = useDebouncedValue(source, SOURCE_DEBOUNCE_MS);
-  const settledConfig = useDebouncedValue(config, CONFIG_DEBOUNCE_MS);
+  // both inputs means the preview is rebuilt only once the user pauses.
+  const settledSource = useDebouncedValue(doc.source, SOURCE_DEBOUNCE_MS);
+  const settledConfig = useDebouncedValue(doc.config, CONFIG_DEBOUNCE_MS);
 
   const rendered = useMemo(() => {
+    if (!hydrated) return null;
     try {
       return {
         ok: true as const,
         value: renderDocument(settledSource, settledConfig, {
-          sourceName,
+          sourceName: doc.sourceName,
           // Absolute asset URLs: Paged.js resolves them against the srcdoc
           // frame's "about:srcdoc" location, where a same-origin path throws.
           resolveUrl: absoluteAssetUrl,
@@ -125,85 +150,413 @@ export default function Home() {
         message: error instanceof Error ? error.message : String(error),
       };
     }
-  }, [settledSource, settledConfig, sourceName]);
+  }, [hydrated, settledSource, settledConfig, doc.sourceName]);
 
-  const openFile = useCallback(async (file: File) => {
-    const text = await file.text();
-    setSource(text);
-    setSourceName(file.name);
-    setDownload({ status: "idle" });
+  const title = useMemo(() => (empty ? "Untitled" : deriveTitle(doc.source)), [doc.source, empty]);
+
+  const fileName =
+    doc.config.output.fileName ??
+    (rendered?.ok && rendered.value.fileName !== "document"
+      ? rendered.value.fileName
+      : toSafeFileName(title));
+
+  useEffect(() => {
+    window.document.title = empty ? "Typeset" : `${title} · Typeset`;
+  }, [title, empty]);
+
+  // --- getting text in ---------------------------------------------------------
+
+  /** New text from outside the editor: fills an empty document, else a new one. */
+  const importText = useCallback(
+    (markdown: string, options: { sourceName?: string; message?: string } = {}) => {
+      if (empty && !options.sourceName) {
+        workspace.setSource(markdown);
+      } else {
+        const id = workspace.createDocument({ source: markdown, sourceName: options.sourceName });
+        toast.success(options.message ?? "Pasted into a new document", {
+          description: "Your previous document is saved in Documents.",
+          action: {
+            label: "Undo",
+            onClick: () => {
+              workspace.removeDocument(id);
+            },
+          },
+        });
+      }
+      if (isPhone) setView("preview");
+    },
+    [empty, isPhone, workspace],
+  );
+
+  const openFile = useCallback(
+    async (file: File) => {
+      if (!MARKDOWN_FILE.test(file.name) && !file.type.startsWith("text/")) {
+        toast.error(`${file.name} isn't a text file`, {
+          description: "Open a Markdown (.md) or plain text (.txt) file.",
+        });
+        return;
+      }
+      const text = await file.text();
+      workspace.createDocument({ source: text, sourceName: file.name });
+      toast.success(`Opened ${file.name}`);
+    },
+    [workspace],
+  );
+
+  const pasteFromClipboard = useCallback(async () => {
+    try {
+      const { markdown } = await readClipboard();
+      if (markdown.trim() === "") {
+        toast("The clipboard is empty", { description: "Copy an answer first, then try again." });
+        return;
+      }
+      importText(markdown);
+    } catch {
+      toast.error("Couldn't read the clipboard", {
+        description: finePointer
+          ? `Your browser blocked it. Press ${modKey}+V instead.`
+          : "Your browser blocked it. Long-press in the editor and choose Paste.",
+      });
+    }
+  }, [finePointer, importText, modKey]);
+
+  const loadSample = useCallback(
+    (id: string) => {
+      const sample = SAMPLES.find((candidate) => candidate.id === id);
+      if (!sample) return;
+      if (empty) workspace.setSource(sample.source);
+      else workspace.createDocument({ source: sample.source });
+    },
+    [empty, workspace],
+  );
+
+  /** Paste inside the editor: rich chatbot HTML becomes Markdown. */
+  const transformPaste = useCallback(({ html, text }: ClipboardPayload): string | null => {
+    const result = clipboardToMarkdown({ html, text });
+    if (result.converted) {
+      toast.success("Pasted as Markdown", {
+        description: "Headings, lists, tables, code and maths were kept.",
+        duration: 3000,
+      });
+      return result.markdown;
+    }
+    return text !== null && hasChatbotArtefacts(text) ? result.markdown : null;
   }, []);
 
-  const handleDownload = useCallback(async () => {
-    setDownload({ status: "working" });
+  // Paste anywhere outside a text field: the fastest path from a chat window
+  // to a PDF is Ctrl+V the moment the app opens.
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      if (isEditable(event.target)) return;
+      const data = event.clipboardData;
+      if (!data) return;
 
-    try {
-      const response = await fetch("/api/render", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // The full config, not the preset id: customisations have to reach the
-        // renderer, and a complete config needs no preset to resolve against.
-        body: JSON.stringify({ source, config, sourceName }),
-      });
-
-      if (!response.ok) {
-        const body: unknown = await response.json().catch(() => null);
-        const message =
-          body && typeof body === "object" && "error" in body
-            ? String((body as { error: unknown }).error)
-            : `Request failed with ${response.status}.`;
-        setDownload({ status: "error", message });
+      const file = data.files?.[0];
+      if (file) {
+        event.preventDefault();
+        void openFile(file);
         return;
       }
 
-      const blob = await response.blob();
+      const { markdown } = clipboardToMarkdown({
+        html: data.getData("text/html") || null,
+        text: data.getData("text/plain") || null,
+      });
+      if (markdown.trim() === "") return;
+      event.preventDefault();
+      importText(markdown);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [importText, openFile]);
 
-      // The server's filename is authoritative: it comes from the same fallback
-      // chain the PDF metadata uses. Recomputing it here would let the two drift.
-      const disposition = response.headers.get("Content-Disposition") ?? "";
-      const encoded = /filename\*=UTF-8''([^;]+)/.exec(disposition)?.[1];
-      const fileName = encoded
-        ? decodeURIComponent(encoded)
-        : `${rendered.ok ? rendered.value.fileName : "document"}.pdf`;
+  // --- getting a document out --------------------------------------------------
 
-      const url = URL.createObjectURL(blob);
-      const anchor = window.document.createElement("a");
-      anchor.href = url;
-      anchor.download = fileName;
-      anchor.click();
-      URL.revokeObjectURL(url);
+  const downloadPdf = useCallback(async () => {
+    if (exportingRef.current) return;
+    if (doc.source.trim() === "") {
+      toast("Nothing to download yet", { description: "Paste or write something first." });
+      return;
+    }
 
-      setDownload({
-        status: "done",
-        pages: Number(response.headers.get("X-Typeset-Pages") ?? 0),
-        ms: Number(response.headers.get("X-Typeset-Duration-Ms") ?? 0),
-        degraded: response.headers.get("X-Typeset-Paginator") !== "pagedjs",
+    exportingRef.current = true;
+    setExporting(true);
+    const toastId = toast.loading("Creating your PDF…");
+
+    try {
+      const result = await exportPdf({
+        source: doc.source,
+        config: doc.config,
+        sourceName: doc.sourceName,
+        fallbackName: fileName,
+      });
+      toast.success(`Downloaded ${result.fileName}`, {
+        id: toastId,
+        description: `${result.pages} ${result.pages === 1 ? "page" : "pages"} · ${(result.ms / 1000).toFixed(1)}s${
+          result.degraded ? " · without running heads" : ""
+        }`,
+      });
+      if (result.missing.length > 0) {
+        toast.warning(
+          result.missing.length === 1
+            ? "1 character couldn't be printed"
+            : `${result.missing.length} characters couldn't be printed`,
+          { description: result.missing.slice(0, 24).join(" ") },
+        );
+      }
+    } catch (error) {
+      toast.error("Couldn't create the PDF", {
+        id: toastId,
+        description: error instanceof Error ? error.message : String(error),
+        action: { label: "Try again", onClick: () => retryDownloadRef.current() },
+      });
+    } finally {
+      exportingRef.current = false;
+      setExporting(false);
+    }
+  }, [doc.config, doc.source, doc.sourceName, fileName]);
+
+  useEffect(() => {
+    retryDownloadRef.current = () => void downloadPdf();
+  }, [downloadPdf]);
+
+  const downloadHtml = useCallback(async () => {
+    if (empty) return;
+    try {
+      const { html } = renderDocument(doc.source, doc.config, {
+        sourceName: doc.sourceName,
+        resolveUrl: absoluteAssetUrl,
+      });
+      await exportStandaloneHtml(html, fileName);
+      toast.success(`Downloaded ${fileName}.html`, {
+        description: "Opens in any browser, even offline.",
       });
     } catch (error) {
-      setDownload({
-        status: "error",
-        message: error instanceof Error ? error.message : String(error),
+      toast.error("Couldn't create the web page", {
+        description: error instanceof Error ? error.message : String(error),
       });
     }
-  }, [config, rendered, source, sourceName]);
+  }, [doc.config, doc.source, doc.sourceName, empty, fileName]);
 
-  const zoomBy = useCallback((direction: 1 | -1) => {
-    setZoom((current) => {
-      const index = ZOOM_STEPS.indexOf(current as (typeof ZOOM_STEPS)[number]);
-      const from = index === -1 ? 2 : index;
-      const next = Math.min(ZOOM_STEPS.length - 1, Math.max(0, from + direction));
-      return ZOOM_STEPS[next] ?? 1;
-    });
+  const downloadMarkdown = useCallback(() => {
+    if (empty) return;
+    exportMarkdown(doc.source, fileName);
+    toast.success(`Downloaded ${fileName}.md`);
+  }, [doc.source, empty, fileName]);
+
+  // --- documents -----------------------------------------------------------------
+
+  const deleteDocument = useCallback(
+    (id: string) => {
+      const removed = workspace.removeDocument(id);
+      if (!removed) return;
+      toast(`Deleted “${deriveTitle(removed.source)}”`, {
+        action: { label: "Undo", onClick: () => workspace.restoreDocument(removed) },
+      });
+    },
+    [workspace],
+  );
+
+  // --- keyboard -------------------------------------------------------------------
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const mod = hasModKey(event);
+      const key = event.key.toLowerCase();
+
+      if (mod && !event.shiftKey && key === "s") {
+        event.preventDefault();
+        void downloadPdf();
+      } else if (mod && !event.shiftKey && key === "o") {
+        event.preventDefault();
+        fileInputRef.current?.click();
+      } else if (mod && key === "k") {
+        event.preventDefault();
+        setCommandOpen((open) => !open);
+      } else if (mod && event.key === "\\") {
+        event.preventDefault();
+        setShowEditor((visible) => !visible);
+      } else if (event.key === "?" && !mod && !isEditable(event.target)) {
+        event.preventDefault();
+        setShortcutsOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [downloadPdf]);
+
+  // --- preview ---------------------------------------------------------------------
+
+  const onPreviewStatus = useCallback((status: PreviewStatus) => {
+    setPreview(status);
+    // A failed layout would leave the previous pages on screen, silently
+    // misrepresenting the document. Continuous is always correct, only
+    // unpaginated - the right content in the wrong shape beats the reverse.
+    if (status.state === "error") {
+      setPaginate(false);
+      toast.warning("Showing one continuous column", {
+        description: `The preview couldn't lay out pages: ${status.message}`,
+      });
+    }
   }, []);
 
+  const resizeEditor = useCallback((width: number) => {
+    setEditorWidth(width);
+    try {
+      window.localStorage.setItem(EDITOR_WIDTH_KEY, String(width));
+    } catch {
+      // Not remembered; still resized.
+    }
+  }, []);
+
+  if (!hydrated) return <AppSkeleton />;
+
+  const words = rendered?.ok ? rendered.value.wordCount : 0;
+  const headings = rendered?.ok ? rendered.value.headings.length : 0;
+  const missing = rendered?.ok && !empty ? rendered.value.missingCharacters : [];
+  const pages = preview.state === "ready" && paginate ? preview.pages : 0;
+
+  // --- pieces ------------------------------------------------------------------------
+
+  const settingsPanel = (inSheet: boolean) => (
+    <SettingsPanel
+      config={doc.config}
+      onChange={workspace.updateConfig}
+      presetId={doc.presetId}
+      modified={workspace.modified}
+      onResetPreset={workspace.resetPreset}
+      showHeader={!inSheet}
+      styleTab={
+        <div>
+          <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
+            Start from a style, then fine-tune anything in the other tabs. Switching style
+            replaces your changes.
+          </p>
+          <PresetGallery
+            value={doc.presetId}
+            modified={workspace.modified}
+            onSelect={workspace.applyPreset}
+            columns={2}
+          />
+        </div>
+      }
+    />
+  );
+
+  const editorPane = (
+    <EditorPane
+      documentId={doc.id}
+      source={doc.source}
+      onChange={workspace.setSource}
+      editorRef={editorRef}
+      transformPaste={transformPaste}
+      modKey={modKey}
+      showKeyHint={finePointer}
+      showToolbar
+      onPasteFromClipboard={() => void pasteFromClipboard()}
+      onOpenFile={() => fileInputRef.current?.click()}
+      onSample={loadSample}
+    />
+  );
+
+  const previewPane = (
+    <PreviewPane
+      html={rendered?.ok ? rendered.value.html : null}
+      error={rendered && !rendered.ok ? rendered.message : null}
+      empty={empty}
+      paginate={paginate}
+      onPaginateChange={setPaginate}
+      zoom={zoom}
+      effectiveZoom={effectiveZoom}
+      onZoomChange={setZoom}
+      onEffectiveZoom={setEffectiveZoom}
+      pageOffset={settledConfig.structure.startPageNumber - 1}
+      status={preview}
+      onStatus={onPreviewStatus}
+      compact={isPhone}
+    />
+  );
+
+  const exportProps = {
+    busy: exporting,
+    disabled: empty,
+    modKey,
+    fileName,
+    fileNameOverridden: doc.config.output.fileName !== null,
+    onRename: (name: string | null) => workspace.updateConfig({ output: { fileName: name } }),
+    onPdf: () => void downloadPdf(),
+    onHtml: () => void downloadHtml(),
+    onMarkdown: downloadMarkdown,
+  };
+
+  const moreMenu = (
+    <MoreMenu
+      modKey={modKey}
+      showExports={isPhone}
+      showKeyboardHelp={finePointer}
+      onNew={() => workspace.createDocument()}
+      onOpenFile={() => fileInputRef.current?.click()}
+      onPaste={() => void pasteFromClipboard()}
+      onSample={loadSample}
+      onPdf={() => void downloadPdf()}
+      onHtml={() => void downloadHtml()}
+      onMarkdown={downloadMarkdown}
+      onShortcuts={() => setShortcutsOpen(true)}
+      onCommandMenu={() => setCommandOpen(true)}
+    />
+  );
+
+  const stylePicker = (
+    <Popover>
+      <Tip label="Document style">
+        <PopoverTrigger asChild>
+          <Button variant="ghost" className="data-[state=open]:bg-surface-hover">
+            <Palette />
+            <span className="max-w-[9rem] truncate">{PRESETS[doc.presetId].name}</span>
+            {workspace.modified && (
+              <span aria-label="edited" className="size-1.5 rounded-full bg-primary" />
+            )}
+            <ChevronDown className="!size-3.5 text-muted-foreground" />
+          </Button>
+        </PopoverTrigger>
+      </Tip>
+      <PopoverContent align="end" className="w-[min(640px,calc(100vw-24px))] p-3">
+        <div className="mb-3 flex items-center justify-between gap-3 px-1">
+          <div>
+            <p className="text-[13px] font-semibold">Document style</p>
+            <p className="text-xs text-muted-foreground">
+              Typefaces, page and colours in one click. Fine-tune in Customise.
+            </p>
+          </div>
+          {workspace.modified && (
+            <Button variant="ghost" size="sm" onClick={workspace.resetPreset}>
+              <RotateCcw /> Reset changes
+            </Button>
+          )}
+        </div>
+        <PresetGallery
+          value={doc.presetId}
+          modified={workspace.modified}
+          onSelect={workspace.applyPreset}
+          columns={4}
+          thumbnailHeight={96}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+
   return (
-    <main
-      className="flex h-dvh flex-col"
-      onDragOver={(event) => {
-        event.preventDefault();
-        setDragging(true);
+    <div
+      className="flex h-dvh flex-col bg-background"
+      onDragEnter={(event) => {
+        if (event.dataTransfer.types.includes("Files")) setDragging(true);
       }}
-      onDragLeave={() => setDragging(false)}
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+      }}
+      onDragLeave={(event) => {
+        if (event.relatedTarget === null) setDragging(false);
+      }}
       onDrop={(event) => {
         event.preventDefault();
         setDragging(false);
@@ -211,420 +564,229 @@ export default function Home() {
         if (file) void openFile(file);
       }}
     >
-      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b-2 border-border px-4 py-2.5">
-        <div className="mr-2 flex items-center gap-2">
-          <Logo />
-          <span className="text-[17px] font-extrabold tracking-tight">Typeset</span>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".md,.markdown,.mdx,.txt,text/markdown,text/plain"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) void openFile(file);
+          event.target.value = "";
+        }}
+      />
+
+      {/* ------------------------------------------------------------ header */}
+      <header className="flex h-14 shrink-0 items-center gap-1.5 border-b border-border bg-surface px-2.5 sm:gap-2 sm:px-3 lg:px-4">
+        <Logo compact={!isDesktop} />
+        {isDesktop && <span aria-hidden className="mx-1.5 h-5 w-px bg-border" />}
+
+        <DocumentsMenu
+          title={title}
+          currentId={doc.id}
+          documents={workspace.documents}
+          saveState={workspace.saveState}
+          showSaveState={isDesktop && !empty}
+          onOpen={workspace.openDocument}
+          onCreate={() => workspace.createDocument()}
+          onDelete={deleteDocument}
+          className="min-w-0 flex-1"
+        />
+
+        {layout === "tablet" && (
+          <Segmented
+            label="View"
+            size="md"
+            value={view}
+            onChange={setView}
+            options={[
+              { value: "write", label: "Write" },
+              { value: "preview", label: "Preview" },
+            ]}
+          />
+        )}
+
+        <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
+          {isDesktop && finePointer && (
+            <Tip label="Command menu" shortcut={`${modKey} K`}>
+              <Button variant="ghost" size="icon" aria-label="Command menu" onClick={() => setCommandOpen(true)}>
+                <Search />
+              </Button>
+            </Tip>
+          )}
+          {isDesktop && stylePicker}
+          {isDesktop && (
+            <Tip label={showEditor ? "Hide editor" : "Show editor"} shortcut={`${modKey} \\`}>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={showEditor ? "Hide editor" : "Show editor"}
+                aria-pressed={showEditor}
+                onClick={() => setShowEditor((visible) => !visible)}
+              >
+                {showEditor ? <PanelLeftClose /> : <PanelLeft />}
+              </Button>
+            </Tip>
+          )}
+          {!isPhone &&
+            (isDesktop ? (
+              <Button
+                variant={settingsOpen ? "secondary" : "ghost"}
+                aria-pressed={settingsOpen}
+                onClick={() => setSettingsOpen((open) => !open)}
+              >
+                <SlidersHorizontal /> Customise
+              </Button>
+            ) : (
+              <Tip label="Customise">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Customise"
+                  onClick={() => setSettingsOpen(true)}
+                >
+                  <SlidersHorizontal />
+                </Button>
+              </Tip>
+            ))}
+          <ExportButton {...exportProps} compact={isPhone} />
+          {moreMenu}
         </div>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".md,.markdown,.mdx,.txt,text/markdown,text/plain"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void openFile(file);
-            event.target.value = "";
-          }}
-        />
-
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-1.5 border border-input px-3 py-1.5 text-xs font-bold transition-colors hover:bg-surface-hover"
-        >
-          <FolderIcon /> Open
-        </button>
-
-        <select
-          aria-label="Sample document"
-          className="h-[34px] border border-input bg-surface px-2 text-xs"
-          defaultValue={DEFAULT_SAMPLE.id}
-          onChange={(event) => {
-            const sample = SAMPLES.find((s) => s.id === event.target.value);
-            if (!sample) return;
-            setSource(sample.source);
-            setSourceName(undefined);
-            setDownload({ status: "idle" });
-          }}
-        >
-          {SAMPLES.map((sample) => (
-            <option key={sample.id} value={sample.id}>
-              {sample.name}
-            </option>
-          ))}
-        </select>
-
-        <div className="flex-1" />
-
-        {/* The output filename, editable in place. This is the fallback chain
-            output.fileName already implements - explicit override, else front
-            matter title, else the first heading, else the opened filename -
-            surfaced where it's actually useful, instead of only reachable via
-            Customise > Output. */}
-        <EditableFilename
-          value={
-            config.output.fileName ??
-            (rendered.ok
-              ? rendered.value.fileName
-              : (sourceName?.replace(/\.[^./]+$/, "") ?? "document"))
-          }
-          isOverridden={config.output.fileName !== null}
-          onCommit={(next) => update({ output: { fileName: next } })}
-        />
-
-        <div className="mx-0.5 h-5 w-px shrink-0 bg-border" />
-
-        {download.status === "error" && (
-          <span className="max-w-[20rem] truncate text-[11px] text-destructive">
-            {download.message}
-          </span>
-        )}
-        {download.status === "done" && (
-          <span className="font-mono text-[11px] text-muted-foreground">
-            saved · {download.pages}pp · {(download.ms / 1000).toFixed(1)}s
-            {download.degraded ? " · no running heads" : ""}
-          </span>
-        )}
-
-        <button
-          type="button"
-          onClick={() => setShowEditor((open) => !open)}
-          aria-pressed={showEditor}
-          title="Toggle editor"
-          className={`flex items-center border px-2.5 py-1.5 text-xs transition-colors ${
-            showEditor
-              ? "border-foreground bg-foreground text-background"
-              : "border-input hover:border-primary"
-          }`}
-        >
-          <EditorToggleIcon />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setShowSettings((open) => !open)}
-          aria-pressed={showSettings}
-          aria-label="Customise"
-          title="Customise"
-          className={`flex items-center gap-1.5 border px-3 py-1.5 text-xs font-bold transition-colors ${
-            showSettings
-              ? "border-foreground bg-foreground text-background"
-              : "border-input hover:border-primary"
-          }`}
-        >
-          <SettingsIcon /> Customise{modified ? " ·" : ""}
-        </button>
-
-        <button
-          type="button"
-          onClick={handleDownload}
-          disabled={download.status === "working" || !rendered.ok}
-          className="bg-primary px-4 py-2 text-xs font-bold text-primary-foreground transition-colors hover:bg-[#dd2b0f] disabled:opacity-45"
-        >
-          {download.status === "working" ? "Rendering…" : "Download PDF"}
-        </button>
       </header>
 
-      <div className="flex shrink-0 items-center gap-0.5 overflow-x-auto px-4">
-        {PRESET_IDS.map((id) => {
-          const active = id === presetId;
-          return (
-            <button
-              key={id}
-              type="button"
-              title={PRESETS[id].bestFor}
-              aria-label={`${PRESETS[id].name} preset`}
-              aria-pressed={active}
-              onClick={() => applyPreset(id)}
-              className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-[12.5px] transition-colors ${
-                active
-                  ? "border-primary font-bold text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <span
-                className="size-[7px] shrink-0"
-                style={{ background: presetAccents[id] }}
-              />
-              {PRESETS[id].name}
-            </button>
-          );
-        })}
-        {/* ml-auto plus a rule of its own is the point: sitting flush after
-            the button row (as it did before) reads as an eighth, unlabelled
-            preset rather than a caption describing the one that's active. */}
-        <span className="ml-auto hidden truncate border-l border-border pl-3 text-[11px] italic text-muted-foreground xl:block">
-          {modified ? "Modified from " : ""}
-          {PRESETS[presetId].tagline}
-        </span>
-      </div>
-
-      {/* Only a wide viewport gets a third column. Below xl the settings panel
-          is an overlay and does not take part in the flex row, so the editor
-          and preview keep their widths.
-          `relative` here is load-bearing: the overlay below is `absolute`
-          against *this* box, which already excludes the header and footer. */}
-      <div className="relative flex min-h-0 flex-1 overflow-hidden">
-        {showEditor && (
-          <div
-            className="flex w-[400px] shrink-0 flex-col border-r-2 border-border bg-surface"
-            style={{ animation: `ts-in-left ${PANEL_ANIMATION}` }}
-          >
-            <div className="shrink-0 border-b border-border px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-muted-foreground">
-              Markdown
-            </div>
-            <div className="min-h-0 flex-1">
-              <MarkdownEditor
-                value={source}
-                onChange={(next) => {
-                  setSource(next);
-                  setDownload({ status: "idle" });
-                }}
-                placeholder="Write Markdown here, or drop a .md file anywhere on the page."
-              />
-            </div>
-          </div>
-        )}
-
-        <div className="relative min-h-0 min-w-0 flex-1 bg-muted">
-          {rendered.ok ? (
-            <PaginatedPreview
-              html={rendered.value.html}
-              paginate={paginate}
-              pageOffset={settledConfig.structure.startPageNumber - 1}
-              zoom={zoom}
-              onStatus={(status) => {
-                setPreview(status);
-                // A failed layout leaves the pane showing the previous pages,
-                // which would silently misrepresent the current document.
-                // Continuous is always correct, just unpaginated - better to
-                // show the right content in the wrong shape than the wrong
-                // content in the right one.
-                if (status.state === "error" && paginate) {
-                  setPaginate(false);
-                  setFellBackToContinuous(true);
-                }
-              }}
-            />
-          ) : (
-            <pre className="m-4 whitespace-pre-wrap border border-destructive/40 bg-destructive/5 p-4 font-mono text-xs text-destructive">
-              {rendered.message}
-            </pre>
-          )}
-
-          {preview.state === "laying-out" && paginate && (
-            <div className="pointer-events-none absolute right-3.5 top-3.5 border border-border bg-background px-2.5 py-1.5 text-[11px] shadow-sm">
-              Laying out…
-            </div>
-          )}
-        </div>
-
-        {showSettings && (
-          <div
-            className="absolute inset-y-0 right-0 z-40 w-[380px] max-w-[85vw] shadow-2xl xl:static xl:z-auto xl:shadow-none"
-            style={{ animation: `ts-in-right ${PANEL_ANIMATION}` }}
-          >
-            <SettingsPanel
-              config={config}
-              onChange={update}
-              presetId={presetId}
-              modified={modified}
-              onResetPreset={() => applyPreset(presetId)}
-            />
-          </div>
-        )}
-      </div>
-
-      <footer className="flex shrink-0 flex-wrap items-center gap-4 border-t-2 border-border px-4 py-1.5 font-mono text-[11px] text-muted-foreground">
-        {rendered.ok && (
-          <>
-            <span>{rendered.value.wordCount.toLocaleString()} words</span>
-            <span>{rendered.value.headings.length} headings</span>
-            <span className="truncate opacity-70">{rendered.value.fileName}.pdf</span>
-          </>
-        )}
-
-        {/* Better named here than discovered as empty boxes in the PDF. */}
-        {rendered.ok && rendered.value.missingCharacters.length > 0 && (
-          <span
-            className="text-destructive"
-            title={`No bundled font can draw these, so they print as empty boxes: ${rendered.value.missingCharacters.join(" ")}`}
-          >
-            {rendered.value.missingCharacters.length === 1
-              ? "1 character can't be printed"
-              : `${rendered.value.missingCharacters.length} characters can't be printed`}
-            : {rendered.value.missingCharacters.slice(0, 8).join(" ")}
-            {rendered.value.missingCharacters.length > 8 ? " …" : ""}
-          </span>
-        )}
-
-        {preview.state === "ready" && paginate && (
-          <span className="opacity-70">
-            {preview.pages} {preview.pages === 1 ? "page" : "pages"} ·{" "}
-            {(preview.ms / 1000).toFixed(1)}s
-          </span>
-        )}
-        {preview.state === "error" && (
-          <span className="text-destructive">{preview.message}</span>
-        )}
-        {fellBackToContinuous && !paginate && (
-          <span className="text-destructive">Showing continuous view</span>
-        )}
-
-        <div className="ml-auto flex items-center gap-3">
-          <div className="flex border border-input">
-            {(
-              [
-                ["Pages", true],
-                ["Continuous", false],
-              ] as const
-            ).map(([label, value], index) => (
-              <button
-                key={label}
-                type="button"
-                onClick={() => {
-                  setPaginate(value);
-                  setFellBackToContinuous(false);
-                }}
-                className={`px-2.5 py-1 transition-colors ${index > 0 ? "border-l border-input" : ""} ${
-                  paginate === value
-                    ? "bg-primary text-primary-foreground"
-                    : "hover:bg-surface-hover"
-                }`}
+      {/* -------------------------------------------------------------- body */}
+      {isDesktop ? (
+        <main className="flex min-h-0 flex-1">
+          {showEditor && (
+            <>
+              <div
+                className="flex min-w-0 shrink-0 flex-col"
+                style={{ width: `min(${editorWidth}px, 58vw)` }}
               >
-                {label}
-              </button>
-            ))}
+                {editorPane}
+              </div>
+              <Splitter
+                value={editorWidth}
+                min={MIN_EDITOR_WIDTH}
+                max={Math.round(window.innerWidth * 0.58)}
+                onChange={resizeEditor}
+                onReset={() => resizeEditor(DEFAULT_EDITOR_WIDTH)}
+              />
+            </>
+          )}
+          <div className="min-w-0 flex-1">{previewPane}</div>
+          {settingsDocked && settingsOpen && (
+            <div className="w-[384px] shrink-0 border-l border-border animate-fade-in">
+              {settingsPanel(false)}
+            </div>
+          )}
+        </main>
+      ) : (
+        // Both panes stay mounted, so switching is instant: the editor keeps its
+        // cursor and undo history, the preview its laid-out pages. The hidden
+        // one is transparent rather than `visibility: hidden`, which the
+        // preview's iframe overrides on itself once it has laid out.
+        <main className="relative min-h-0 flex-1">
+          <div
+            className={cn(
+              "absolute inset-0",
+              view === "write" ? "z-10" : "pointer-events-none opacity-0",
+            )}
+            inert={view !== "write"}
+          >
+            {editorPane}
           </div>
+          <div
+            className={cn(
+              "absolute inset-0",
+              view === "preview" ? "z-10" : "pointer-events-none opacity-0",
+            )}
+            inert={view !== "preview"}
+          >
+            {previewPane}
+          </div>
+        </main>
+      )}
 
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => zoomBy(-1)}
-              aria-label="Zoom out"
-              className="border border-input px-2 py-0.5 transition-colors hover:bg-surface-hover"
-            >
-              −
-            </button>
-            <span className="w-10 text-center tabular-nums">
-              {Math.round(zoom * 100)}%
-            </span>
-            <button
-              type="button"
-              onClick={() => zoomBy(1)}
-              aria-label="Zoom in"
-              className="border border-input px-2 py-0.5 transition-colors hover:bg-surface-hover"
-            >
-              +
-            </button>
-          </div>
-        </div>
-      </footer>
+      {!isPhone && (
+        <StatusBar
+          words={empty ? 0 : words}
+          headings={empty ? 0 : headings}
+          missing={missing}
+          status={preview}
+          paginate={paginate && !empty}
+        />
+      )}
+
+      {isPhone && (
+        <MobileTabBar
+          view={view}
+          onViewChange={setView}
+          onStyle={() => setSettingsOpen(true)}
+          styleOpen={settingsOpen}
+          pages={empty ? 0 : pages}
+        />
+      )}
+
+      {/* -------------------------------------------------- overlays */}
+      <Dialog open={settingsOpen && !settingsDocked} onOpenChange={setSettingsOpen}>
+        <SheetContent
+          side={isPhone ? "bottom" : "right"}
+          title="Customise"
+          description="Choose a style and adjust the page, type, colours and structure."
+          className={isPhone ? "h-[88dvh]" : undefined}
+          actions={
+            workspace.modified ? (
+              <Button variant="ghost" size="sm" onClick={workspace.resetPreset}>
+                <RotateCcw /> Reset
+              </Button>
+            ) : null
+          }
+        >
+          {settingsPanel(true)}
+        </SheetContent>
+      </Dialog>
+
+      <CommandPalette
+        open={commandOpen}
+        onOpenChange={setCommandOpen}
+        modKey={modKey}
+        documents={workspace.documents}
+        currentId={doc.id}
+        presetId={doc.presetId}
+        paginate={paginate}
+        editorVisible={showEditor}
+        settingsVisible={settingsOpen}
+        onNew={() => workspace.createDocument()}
+        onOpenFile={() => fileInputRef.current?.click()}
+        onPaste={() => void pasteFromClipboard()}
+        onOpenDocument={workspace.openDocument}
+        onPdf={() => void downloadPdf()}
+        onHtml={() => void downloadHtml()}
+        onMarkdown={downloadMarkdown}
+        onPreset={workspace.applyPreset}
+        onToggleEditor={isDesktop ? () => setShowEditor((visible) => !visible) : undefined}
+        onToggleSettings={() => setSettingsOpen((open) => !open)}
+        onPaginate={setPaginate}
+        onFit={() => setZoom("fit")}
+        onTheme={setThemePreference}
+        onSample={loadSample}
+        onShortcuts={() => setShortcutsOpen(true)}
+      />
+
+      <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} modKey={modKey} />
 
       {dragging && (
-        <div className="pointer-events-none fixed inset-0 z-50 grid place-items-center bg-background/85">
-          <div
-            className="border-2 border-dashed border-primary bg-background px-10 py-7 shadow-lg"
-            style={{ animation: "ts-pop .22s ease both" }}
-          >
-            <span className="text-[15px] font-extrabold">
-              Drop a Markdown file to open it
+        <div className="pointer-events-none fixed inset-0 z-[80] grid place-items-center bg-background/80 backdrop-blur-sm animate-fade-in">
+          <div className="flex flex-col items-center rounded-2xl border-2 border-dashed border-primary bg-surface px-12 py-9 text-center shadow-lg animate-pop-in">
+            <span className="grid size-12 place-items-center rounded-2xl bg-primary-soft text-primary">
+              <FileUp className="size-6" />
             </span>
+            <p className="mt-3 text-[15px] font-semibold">Drop to open</p>
+            <p className="mt-1 text-xs text-muted-foreground">Markdown or plain text files</p>
           </div>
         </div>
       )}
-    </main>
-  );
-}
-
-/**
- * The output filename, shown as plain text and turned into an input on click.
- *
- * A top-level function, not one nested inside Home: nested there, it would be a
- * new component type on every render and React would unmount/remount it on
- * each keystroke elsewhere in the app - the same bug LengthField had in the
- * settings panel. Its edit state has to survive its parent re-rendering, so it
- * owns that state itself rather than being fully controlled.
- */
-function EditableFilename({
-  value,
-  isOverridden,
-  onCommit,
-}: {
-  /** The name to show while not editing - either an override or the derived one. */
-  value: string;
-  /** True when `value` is a user override rather than a derived name. */
-  isOverridden: boolean;
-  /** Called with the new override, or null to go back to the derived name. */
-  onCommit: (next: string | null) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-
-  const startEditing = () => {
-    setDraft(value);
-    setEditing(true);
-  };
-
-  const commit = () => {
-    setEditing(false);
-    const trimmed = draft.trim();
-    if (trimmed === value) return; // Nothing actually changed.
-    onCommit(trimmed === "" ? null : trimmed);
-  };
-
-  if (editing) {
-    return (
-      <input
-        type="text"
-        autoFocus
-        value={draft}
-        onFocus={(event) => event.currentTarget.select()}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") event.currentTarget.blur();
-          if (event.key === "Escape") {
-            setDraft(value);
-            setEditing(false);
-          }
-        }}
-        aria-label="Output filename"
-        className="min-w-0 max-w-[16rem] border border-primary bg-surface px-2 py-1 font-mono text-[12px] text-foreground outline-none"
-      />
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={startEditing}
-      title="Click to rename the PDF"
-      className="flex min-w-0 max-w-[16rem] items-center gap-1 px-2 py-1 font-mono text-[12px] text-foreground opacity-60 transition-opacity hover:opacity-100"
-    >
-      <span className="truncate">{value}.pdf</span>
-      {isOverridden && (
-        <span
-          role="button"
-          tabIndex={0}
-          title="Reset to the automatic name"
-          onClick={(event) => {
-            event.stopPropagation();
-            onCommit(null);
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter" && event.key !== " ") return;
-            event.stopPropagation();
-            event.preventDefault();
-            onCommit(null);
-          }}
-          className="shrink-0 px-1 hover:text-primary"
-        >
-          ×
-        </span>
-      )}
-    </button>
+    </div>
   );
 }

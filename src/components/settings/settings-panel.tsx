@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
+import { RotateCcw } from "lucide-react";
 
 import {
   ChipGroup,
@@ -58,6 +59,10 @@ type Props = {
   /** True when the config no longer matches the preset it started from. */
   modified: boolean;
   onResetPreset: () => void;
+  /** Shown as a first "Style" tab: the gallery of presets to start from. */
+  styleTab?: ReactNode;
+  /** False inside a sheet, which has a title bar of its own. */
+  showHeader?: boolean;
 };
 
 const FONT_GROUPS = [
@@ -173,7 +178,9 @@ function KeywordsField({
   );
 }
 
-type SettingsTab = "page" | "type" | "theme" | "document";
+type SettingsTab = "style" | "page" | "type" | "theme" | "document";
+
+const STYLE_TAB = { value: "style", label: "Style" } as const;
 
 const SETTINGS_TABS: { value: SettingsTab; label: string }[] = [
   { value: "page", label: "Page" },
@@ -199,8 +206,11 @@ export function SettingsPanel({
   presetId,
   modified,
   onResetPreset,
+  styleTab,
+  showHeader = true,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<SettingsTab>("page");
+  const [activeTab, setActiveTab] = useState<SettingsTab>(styleTab ? "style" : "page");
+  const tabs = styleTab ? [STYLE_TAB, ...SETTINGS_TABS] : SETTINGS_TABS;
   const unit = config.page.displayUnit;
 
   // Which named margin preset (if any) the current margins exactly match.
@@ -229,27 +239,32 @@ export function SettingsPanel({
   const showCustomMargins = marginsForceCustom || !matchingMarginPreset;
 
   return (
-    <aside className="flex h-full min-h-0 w-full flex-col border-l-2 border-border bg-surface">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-3.5 py-2.5">
-        <span className="text-[13px] font-extrabold">Customise</span>
-        <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
-          {PRESETS[presetId].name}
-          {modified ? " (modified)" : ""}
-        </span>
-        {modified && (
-          <button
-            type="button"
-            onClick={onResetPreset}
-            className="shrink-0 border-none px-2 py-1 text-[11px] text-primary transition-colors hover:bg-primary/10"
-          >
-            Reset
-          </button>
-        )}
-      </div>
+    <aside className="flex h-full min-h-0 w-full flex-col bg-surface">
+      {showHeader && (
+        <div className="flex h-12 shrink-0 items-center gap-2 px-4">
+          <span className="text-[15px] font-semibold">Customise</span>
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+            {PRESETS[presetId].name}
+            {modified ? " · edited" : ""}
+          </span>
+          {modified && (
+            <button
+              type="button"
+              onClick={onResetPreset}
+              title={`Discard your changes and go back to ${PRESETS[presetId].name}`}
+              className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-primary transition-colors hover:bg-primary-soft"
+            >
+              <RotateCcw className="size-3.5" /> Reset
+            </button>
+          )}
+        </div>
+      )}
 
-      <Tabs value={activeTab} onChange={setActiveTab} options={SETTINGS_TABS} />
+      <Tabs value={activeTab} onChange={setActiveTab} options={tabs} />
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6 pt-3">
+        {activeTab === "style" && styleTab}
+
         {/* ================================================================ */}
         {/* PAGE                                                             */}
         {/* ================================================================ */}

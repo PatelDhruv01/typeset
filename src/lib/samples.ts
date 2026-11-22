@@ -193,7 +193,72 @@ suggests that policy set at district level is the right instrument.
 4. Fund recharge structures in the three critical blocks first.
 `;
 
+/** Shaped like a real assistant answer: emoji, arrows, a tree, a table, maths. */
+const CHATBOT = `# 🐍 Setting up a Python project the right way
+
+Here's a clean, repeatable setup → it works the same on macOS, Linux and Windows.
+
+## 1. Create a virtual environment
+
+\`\`\`bash
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
+pip install --upgrade pip
+\`\`\`
+
+> [!TIP]
+> Add \`.venv/\` to your \`.gitignore\` so the environment never ends up in version control.
+
+## 2. Lay out the project
+
+\`\`\`text
+my-project/
+├── src/
+│   └── my_project/
+│       ├── __init__.py
+│       └── main.py      → entry point
+├── tests/
+│   └── test_main.py
+├── pyproject.toml       ✓ single source of truth
+└── README.md
+\`\`\`
+
+## 3. Pick a dependency tool
+
+| Tool | Speed | Lock file | Best for |
+| --- | :---: | :---: | --- |
+| pip + venv | ⭐⭐ | ❌ | Small scripts |
+| Poetry | ⭐⭐⭐ | ✅ | Libraries |
+| uv | ⭐⭐⭐⭐⭐ | ✅ | Almost everything now |
+
+## 4. Things to watch out for
+
+- ✅ **Pin versions** in a lock file for reproducible installs
+- ✅ Run tests with \`pytest -q\` before every commit
+- ❌ Don't install packages globally with \`sudo pip\`
+- ⚠️ Python 3.8 is end-of-life — target **3.11 or newer**
+
+### Why it pays off
+
+If each of $n$ dependencies breaks with probability $p$ per release, an unpinned
+project survives an update with probability
+
+$$P = (1 - p)^n$$
+
+so with 40 dependencies and $p = 0.02$, that's only about **45%**. Pinning keeps it at 💯.
+
+---
+
+💡 *Want me to add a GitHub Actions workflow that runs the tests on every push?*
+`;
+
 export const SAMPLES: Sample[] = [
+  {
+    id: "chatbot",
+    name: "Chatbot answer",
+    description: "What a typical AI answer looks like once typeset.",
+    source: CHATBOT,
+  },
   {
     id: "tour",
     name: "Feature tour",

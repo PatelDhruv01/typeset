@@ -2,10 +2,31 @@
 
 **Markdown in. Typeset PDF out.**
 
-Turn Markdown into a typeset, print-ready PDF — with a live paginated preview,
-real typography controls, and no sign-up.
+Turn Markdown — or an answer copied from ChatGPT, Claude or Gemini — into a
+typeset, print-ready PDF, with a live paginated preview, real typography
+controls, and no sign-up.
 
-> **Status: in development.** Phases 0-3 of 7 complete: a real editor, a page-accurate live preview and paginated PDF export. See the roadmap below.
+> **Status: in development.** Phases 0-4 of 7 complete, most of 5. See the roadmap below.
+
+## Using it
+
+- **Paste a chatbot answer.** Copy a reply and press Ctrl/⌘+V anywhere. Rich
+  text copied from a chat window is converted back to Markdown — headings,
+  lists, tables, code blocks (with their language), KaTeX maths and emoji —
+  and the chat UI's clutter ("Copy code" buttons, language labels, citation
+  markers) is dropped. Text that is already Markdown is used as it is.
+  Ctrl/⌘+Shift+V pastes exactly what was copied.
+- **Pick a style** from the gallery, then fine-tune page, type, colours and
+  structure in Customise.
+- **Download** a PDF (Ctrl/⌘+S), a self-contained HTML page that works
+  offline, or the Markdown source.
+- **Everything is saved in your browser** as you type, with a list of recent
+  documents. Nothing is uploaded except to render a PDF.
+- **Works on any screen.** Phones get one pane at a time with a bottom tab
+  bar and settings in a bottom sheet; tablets switch panes from the header;
+  desktops get a resizable editor, the live pages, and a docked settings panel.
+- **Keyboard:** Ctrl/⌘+K opens a command menu for everything; `?` lists the
+  shortcuts. Light and dark appearance follow the system or your choice.
 
 ---
 
@@ -69,6 +90,8 @@ API for free.
 | Post-processing | `pdf-lib` | Metadata, encryption, page-level tweaks |
 | Config validation | Zod | One schema, trusted on both sides of the network |
 | Styling | Tailwind v4 | App chrome only — document theming is a separate system |
+| UI primitives | Radix UI, cmdk, Sonner, Lucide | Accessible menus, sheets and dialogs (focus, Escape, screen readers) without reinventing them |
+| Rich paste | Turndown + GFM plugin | Chat-window HTML back to Markdown, with custom rules for code blocks, KaTeX and chat UI furniture |
 
 ## Getting started
 
@@ -135,15 +158,22 @@ The output filename is derived, not fixed: explicit config, then front matter
 
 ```
 src/
-  app/                  Next.js routes and the application shell
+  app/                  Next.js routes; page.tsx composes the workspace
   lib/
+    app/                Saved documents, autosave, theme, layout queries, exports
+    paste/              Clipboard (chat HTML, plain text) -> clean Markdown
+    text/               Emoji segmentation shared by renderer and font picker
     config/             DocumentConfig schema, page geometry, style presets
-    fonts/              Font registry (+ generated file manifest)
+    fonts/              Font registry, fallback chains, coverage (+ manifest)
     renderer/           markdown -> HTML, config -> CSS, document assembly
       generated/        Baked-in code themes and KaTeX CSS
     pdf/                Browser launch, asset inlining, the PDF engine
-  components/           Editor and preview (both client-only)
+  components/
+    app/                Header, panes, style gallery, menus, command palette
+    ui/                 Buttons, menus, popovers, sheets (Radix underneath)
     settings/           Form primitives and the customisation panel
+    markdown-editor.tsx CodeMirror binding, formatting commands, smart paste
+    paginated-preview.tsx  Paged.js preview frame, fit-to-width zoom
 vendor/
   fonts/noto-color-emoji/  Pre-split COLRv1 colour emoji (see below)
 scripts/
