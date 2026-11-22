@@ -1,5 +1,10 @@
 import type { DocumentConfig } from "@/lib/config/schema";
-import { buildDocumentCss, type CssOptions } from "@/lib/renderer/css";
+import { findMissingCharacters } from "@/lib/fonts";
+import {
+  buildDocumentCss,
+  documentFonts,
+  type CssOptions,
+} from "@/lib/renderer/css";
 import { renderCover } from "@/lib/renderer/cover";
 import { renderToc } from "@/lib/renderer/toc";
 import {
@@ -44,6 +49,12 @@ export type RenderedDocument = {
   hasCover: boolean;
   /** True when a contents page was actually produced. */
   hasToc: boolean;
+  /**
+   * Characters, or emoji sequences, that no bundled font can draw. They print
+   * as empty boxes, so the caller should tell the user rather than let them
+   * find out from the PDF.
+   */
+  missingCharacters: string[];
 };
 
 function escapeHtml(value: string): string {
@@ -72,8 +83,17 @@ function asText(value: unknown): string | null {
 const WINDOWS_RESERVED =
   /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
 
+/**
+ * Emoji, and the joiners and selectors that build them. Legal in most file
+ * systems, but "\ud83d\ude80 Launch plan.pdf" is not a name anyone types, sorts or
+ * attaches comfortably - and chatbot answers put an emoji in half their titles.
+ */
+const PICTOGRAPHS =
+  /[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\u200d\ufe0e\ufe0f\u20e3]/gu;
+
 export function toSafeFileName(value: string, fallback = "document"): string {
   const cleaned = value
+    .replace(PICTOGRAPHS, "")
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ")
@@ -139,12 +159,6 @@ export function renderDocument(
   // which is most of them - should not pay for it.
   const hasMath = config.markdown.math && parsed.html.includes("katex");
 
-  const css = buildDocumentCss(
-    config,
-    { title, subtitle, author, date, filename: fileName },
-    { ...cssOptions, includeKatex: cssOptions.includeKatex ?? hasMath },
-  );
-
   const cover = renderCover(config.cover, {
     title,
     subtitle,
@@ -155,6 +169,20 @@ export function renderDocument(
   const toc = renderToc(config.toc, parsed.headings);
 
   const bodyHtml = `${cover}${toc}<div class="doc-body">${parsed.html}</div>`;
+
+  // The stylesheet is told what the document draws, so it ships only the
+  // font files that text needs - one emoji file rather than twelve.
+  const css = buildDocumentCss(
+    config,
+    { title, subtitle, author, date, filename: fileName },
+    {
+      ...cssOptions,
+      includeKatex: cssOptions.includeKatex ?? hasMath,
+      text: cssOptions.text ?? bodyHtml,
+    },
+  );
+
+  const missingCharacters = findMissingCharacters(documentFonts(config), bodyHtml);
 
   const html = [
     "<!doctype html>",
@@ -191,5 +219,6 @@ export function renderDocument(
     hasMath,
     hasCover: cover !== "",
     hasToc: toc !== "",
+    missingCharacters,
   };
 }

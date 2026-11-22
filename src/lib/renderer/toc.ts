@@ -1,5 +1,6 @@
 import type { TocConfig } from "@/lib/config/schema";
 import type { ExtractedHeading } from "@/lib/renderer/markdown";
+import { wrapEmojiInHtml } from "@/lib/text/emoji";
 
 /**
  * The table of contents.
@@ -21,6 +22,11 @@ function escapeHtml(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/** Escaped, with emoji wrapped so they draw in colour as in the headings. */
+function displayText(value: string): string {
+  return wrapEmojiInHtml(escapeHtml(value));
 }
 
 export function renderToc(
@@ -49,7 +55,7 @@ export function renderToc(
         `<li class="toc-entry toc-level-${heading.depth}">`,
         `<a href="#${escapeHtml(heading.id)}">`,
         number,
-        `<span class="toc-text">${escapeHtml(heading.text)}</span>`,
+        `<span class="toc-text">${displayText(heading.text)}</span>`,
         // Flex spacer carrying the dot leader, then the slot the page number
         // is written into after layout. The slot has a reserved width, so
         // filling it cannot reflow the page and invalidate its own answer.
@@ -63,7 +69,7 @@ export function renderToc(
 
   return [
     '<nav class="toc" role="doc-toc">',
-    `<div class="toc-title">${escapeHtml(toc.title)}</div>`,
+    `<div class="toc-title">${displayText(toc.title)}</div>`,
     '<ul class="toc-list">',
     items,
     "</ul>",

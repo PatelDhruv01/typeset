@@ -30,6 +30,14 @@ describe("toSafeFileName", () => {
     expect(toSafeFileName("Résumé Français")).toBe("Resume Francais");
   });
 
+  it("drops emoji, which chatbot titles are full of", () => {
+    expect(toSafeFileName("🚀 Launch plan")).toBe("Launch plan");
+    expect(toSafeFileName("Q3 ✅ done 👩🏾‍🔬 🇮🇳")).toBe("Q3 done");
+    expect(toSafeFileName("✨")).toBe("document");
+    // Plain symbols that are not pictographs survive.
+    expect(toSafeFileName("A → B")).toBe("A → B");
+  });
+
   it("refuses Windows reserved device names", () => {
     // Creating "CON.pdf" on Windows fails in ways that are hard to explain.
     expect(toSafeFileName("CON")).toBe("document");

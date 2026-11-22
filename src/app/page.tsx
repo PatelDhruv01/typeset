@@ -446,9 +446,24 @@ export default function Home() {
           </>
         )}
 
+        {/* Better named here than discovered as empty boxes in the PDF. */}
+        {rendered.ok && rendered.value.missingCharacters.length > 0 && (
+          <span
+            className="text-destructive"
+            title={`No bundled font can draw these, so they print as empty boxes: ${rendered.value.missingCharacters.join(" ")}`}
+          >
+            {rendered.value.missingCharacters.length === 1
+              ? "1 character can't be printed"
+              : `${rendered.value.missingCharacters.length} characters can't be printed`}
+            : {rendered.value.missingCharacters.slice(0, 8).join(" ")}
+            {rendered.value.missingCharacters.length > 8 ? " …" : ""}
+          </span>
+        )}
+
         {preview.state === "ready" && paginate && (
           <span className="opacity-70">
-            {preview.pages} pages · {(preview.ms / 1000).toFixed(1)}s
+            {preview.pages} {preview.pages === 1 ? "page" : "pages"} ·{" "}
+            {(preview.ms / 1000).toFixed(1)}s
           </span>
         )}
         {preview.state === "error" && (

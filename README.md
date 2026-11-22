@@ -113,7 +113,9 @@ curl -X POST http://localhost:3000/api/render -H 'Content-Type: application/json
 | `format` | `pdf` or `html` | `html` returns the rendered document instead. |
 
 Responses carry `X-Typeset-Pages`, `X-Typeset-Paginator`,
-`X-Typeset-Duration-Ms`, and `X-Typeset-Fallback` when a render was degraded.
+`X-Typeset-Duration-Ms`, `X-Typeset-Fallback` when a render was degraded, and
+`X-Typeset-Missing-Glyphs` (URI-encoded, space-separated) when the document
+contains characters no bundled font can draw.
 
 The output filename is derived, not fixed: explicit config, then front matter
 `title`, then the first `# heading`, then the uploaded filename.
@@ -142,8 +144,12 @@ src/
     pdf/                Browser launch, asset inlining, the PDF engine
   components/           Editor and preview (both client-only)
     settings/           Form primitives and the customisation panel
+vendor/
+  fonts/noto-color-emoji/  Pre-split COLRv1 colour emoji (see below)
 scripts/
   sync-fonts.mjs        Copies woff2 out of @fontsource into public/fonts
+  lib/font-codepoints.mjs  Reads a font's cmap (WOFF2 or TTF), no dependencies
+  build-emoji-font.py   Rebuilds vendor/fonts/noto-color-emoji (maintainers only)
   sync-styles.mjs       Bakes code themes and KaTeX CSS in, copies Paged.js
   proof.mjs             Screenshots a paginated page, to check running heads
   diagnose-justify.mjs  Reports the alignment Chromium actually applied
@@ -177,13 +183,60 @@ can use that as it stands, and they need opposite fixes:
 
 Both go through the same `CssOptions.resolveUrl` seam.
 
+### Glyph coverage: arrows, ticks, emoji and other scripts
+
+Chatbot answers are full of characters body fonts do not carry: → ✓ ✗ ⚠️ ✅,
+box-drawing file trees, maths, and emoji. The Chromium that prints PDFs on
+Vercel has exactly one system font (Open Sans), so anything the chosen face
+lacks used to print as an empty box — while the preview, drawing on the
+viewer's own system fonts, looked fine.
+
+Every font stack now ends in a chain of bundled fallbacks, used identically by
+the preview and the PDF (`src/lib/fonts/index.ts`):
+
+1. the chosen face, with every subset it has (Greek, Cyrillic, Vietnamese…);
+2. script fonts — Devanagari, Gujarati, Bengali, Gurmukhi, Odia, Tamil,
+   Telugu, Kannada, Malayalam, Arabic, Hebrew, Thai;
+3. symbol fonts — Noto Sans Math, Noto Sans Symbols 2, Noto Sans Symbols,
+   DejaVu Sans (code blocks get DejaVu Sans Mono first, so trees stay aligned);
+4. Noto Color Emoji.
+
+Each file's `unicode-range` is read from its own cmap
+(`scripts/lib/font-codepoints.mjs`), so the renderer knows exactly which file
+draws which character. It ships only the files a document needs — a PDF with
+one emoji inlines one small emoji file — and reports anything nothing can draw
+(currently Chinese, Japanese and Korean) instead of printing a box.
+
+Emoji sequences are wrapped in `<span class="emoji">` so the colour font is
+asked before any text font with a monochrome glyph for the same character.
+Bare text-default characters such as → and ✓ stay text, as Unicode intends.
+
+`src/lib/pdf/render.test.ts` asks Chromium, via the DevTools protocol, which
+font drew every node of a chatbot-style sample, and fails if any came from the
+system. That is what makes a pass on a developer's machine mean something on
+Vercel.
+
+### The emoji font is vendored
+
+`vendor/fonts/noto-color-emoji/` is committed, not generated at build time.
+The `@fontsource/noto-color-emoji` subsets are OpenType-SVG, which Chrome does
+not render (blank emoji); its single COLRv1 file is 5.6 MB; and harfbuzzjs is
+built without colour-table support. `scripts/build-emoji-font.py` splits the
+COLRv1 master along Google's sequence-preserving groups with fontTools. Run it
+only when upgrading the emoji font:
+
+```bash
+python -m pip install fonttools brotli
+npm install --no-save @fontsource/noto-color-emoji
+python scripts/build-emoji-font.py
+```
+
 ### Generated assets
 
 `public/fonts/`, `public/katex/` and `src/lib/renderer/generated/` are produced
 by the two sync scripts and regenerated automatically before `dev` and `build`.
 Adding a font is one line in `FONT_PACKAGES`; everything else — weight axes,
-unicode ranges, licensing metadata — is read from the package's own
-`metadata.json`.
+unicode ranges, licensing metadata — is read from the package itself.
 
 ## License
 

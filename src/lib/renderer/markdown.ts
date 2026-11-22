@@ -22,10 +22,16 @@ import type { BlockContent, Root as MdastRoot, RootContent } from "mdast";
 // Type-only side-effect import: teaches mdast about containerDirective nodes,
 // which remark-directive adds to the tree at runtime.
 import type {} from "mdast-util-directive";
-import type { Element, Root as HastRoot } from "hast";
+import type {
+  Element,
+  ElementContent,
+  Root as HastRoot,
+  RootContent as HastRootContent,
+} from "hast";
 
 import type { MarkdownConfig, StructureConfig } from "@/lib/config/schema";
 import { buildSanitizeSchema } from "@/lib/renderer/sanitize";
+import { EMOJI_CLASS, splitEmoji } from "@/lib/text/emoji";
 
 /**
  * Markdown -> HTML.
@@ -351,6 +357,66 @@ function rehypeHeadings(
 }
 
 // ---------------------------------------------------------------------------
+// Emoji
+// ---------------------------------------------------------------------------
+
+/** Subtrees whose text is not prose: never wrap inside them. */
+const NO_EMOJI_TAGS = new Set(["script", "style", "svg", "math", "textarea"]);
+
+function hasClass(node: Element, name: string): boolean {
+  const value = node.properties?.className;
+  return Array.isArray(value) && value.includes(name);
+}
+
+function wrapEmoji(parent: HastRoot | Element): void {
+  const children = parent.children as Array<HastRootContent | ElementContent>;
+
+  for (let i = 0; i < children.length; i += 1) {
+    const child = children[i];
+    if (!child) continue;
+
+    if (child.type === "element") {
+      if (NO_EMOJI_TAGS.has(child.tagName)) continue;
+      // KaTeX positions every glyph itself; an extra span would move them.
+      if (hasClass(child, "katex") || hasClass(child, EMOJI_CLASS)) continue;
+      wrapEmoji(child);
+      continue;
+    }
+
+    if (child.type !== "text") continue;
+
+    const runs = splitEmoji(child.value);
+    if (!runs.some((run) => run.emoji)) continue;
+
+    const replacement: ElementContent[] = runs.map((run) =>
+      run.emoji
+        ? {
+            type: "element",
+            tagName: "span",
+            properties: { className: [EMOJI_CLASS] },
+            children: [{ type: "text", value: run.text }],
+          }
+        : { type: "text", value: run.text },
+    );
+
+    children.splice(i, 1, ...replacement);
+    i += replacement.length - 1;
+  }
+}
+
+/**
+ * Wraps every emoji sequence in `<span class="emoji">`, so it is drawn from
+ * the colour emoji font rather than a monochrome text glyph (see
+ * lib/text/emoji.ts). Runs after sanitising, which would otherwise strip the
+ * class, and after highlighting, so emoji inside code are wrapped too.
+ */
+function rehypeEmoji() {
+  return (tree: HastRoot) => {
+    wrapEmoji(tree);
+  };
+}
+
+// ---------------------------------------------------------------------------
 // The pipeline
 // ---------------------------------------------------------------------------
 
@@ -430,6 +496,8 @@ export function renderMarkdown(
     // source in <span>s and make the diagram renderer's job impossible.
     plainText: ["mermaid", "text", "plain", "txt"],
   });
+
+  processor.use(rehypeEmoji);
 
   processor.use(rehypeStringify, { allowDangerousHtml: markdown.rawHtml === "allow" });
 
