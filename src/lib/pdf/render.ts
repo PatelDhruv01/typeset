@@ -53,6 +53,8 @@ export type PdfRenderResult = {
   paginatedBy: "pagedjs" | "chromium";
   /** Contents entries that received a page number. 0 when there is no contents. */
   tocEntriesNumbered: number;
+  /** Characters no bundled font can draw; they print as empty boxes. */
+  missingCharacters: string[];
   durationMs: number;
 };
 
@@ -267,6 +269,7 @@ export async function renderPdf(
       pageCount,
       paginatedBy,
       tocEntriesNumbered,
+      missingCharacters: rendered.missingCharacters,
       durationMs: Date.now() - startedAt,
     };
   } finally {

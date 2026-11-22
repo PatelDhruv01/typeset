@@ -155,6 +155,15 @@ export async function POST(request: Request): Promise<Response> {
         "X-Typeset-Paginator": result.paginatedBy,
         "X-Typeset-Toc-Entries": String(result.tocEntriesNumbered),
         "X-Typeset-Duration-Ms": String(result.durationMs),
+        // Characters nothing could draw, so the UI can name them instead of
+        // leaving the user to find empty boxes in the PDF.
+        ...(result.missingCharacters.length > 0
+          ? {
+              "X-Typeset-Missing-Glyphs": encodeURIComponent(
+                result.missingCharacters.slice(0, 64).join(" "),
+              ),
+            }
+          : {}),
         ...(result.fallbackReason
           ? { "X-Typeset-Fallback": encodeURIComponent(result.fallbackReason) }
           : {}),

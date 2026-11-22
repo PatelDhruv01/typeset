@@ -276,6 +276,39 @@ describe("renderMarkdown", () => {
     });
   });
 
+  describe("emoji", () => {
+    const span = (emoji: string) => `<span class="emoji">${emoji}</span>`;
+
+    it("wraps emoji so they draw from the colour font", () => {
+      const { html } = render("Done ✅ but ⚠️ check 👩🏾‍🔬");
+      expect(html).toContain(span("✅"));
+      expect(html).toContain(span("⚠️"));
+      expect(html).toContain(span("👩🏾‍🔬"));
+    });
+
+    it("leaves text symbols as text", () => {
+      const { html } = render("a → b ✓ ✗ ⚠ ★");
+      expect(html).not.toContain('class="emoji"');
+    });
+
+    it("wraps emoji in headings, tables and code", () => {
+      const { html } = render(
+        "# 🚀 Launch\n\n| a |\n|---|\n| ✅ |\n\n`🚀 inline`\n\n```js\n// 🚀 comment\n```",
+      );
+      expect(html.match(/class="emoji"/g)).toHaveLength(4);
+    });
+
+    it("keeps heading text intact for the contents and running heads", () => {
+      const { headings } = render("# 🚀 Launch");
+      expect(headings[0]?.text).toBe("🚀 Launch");
+    });
+
+    it("leaves maths alone", () => {
+      const { html } = render("$\\text{✅}$");
+      expect(html).not.toContain('class="emoji"');
+    });
+  });
+
   it("counts words for the status bar", () => {
     expect(render("# Title\n\nOne two three four.").wordCount).toBe(5);
   });

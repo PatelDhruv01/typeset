@@ -1,18 +1,17 @@
-import type { Metadata } from "next";
-import { Archivo, JetBrains_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Inter, JetBrains_Mono } from "next/font/google";
+
+import { Providers } from "@/components/app/providers";
+import { THEME_INIT_SCRIPT } from "@/lib/app/theme";
+
 import "./globals.css";
 
-// next/font downloads and self-hosts these at build time. That matters more
-// than it looks: the legacy script pulled fonts from Google's CDN at render
-// time, so a render box without egress silently fell back to Times New Roman.
-//
-// Archivo carries the whole app chrome - body and headings alike, per the
-// Modernist design system (it draws no distinction between the two). Weights
-// 400/600/800 match what the design's own font request asks for.
-const archivo = Archivo({
+// next/font downloads and self-hosts these at build time, so the app chrome
+// never depends on a font CDN at runtime. (The *document's* fonts are a
+// separate system - see scripts/sync-fonts.mjs.)
+const inter = Inter({
   subsets: ["latin"],
-  weight: ["400", "600", "800"],
-  variable: "--font-archivo",
+  variable: "--font-inter",
   display: "swap",
 });
 
@@ -24,12 +23,22 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Typeset — Markdown to PDF",
+    default: "Typeset — Markdown and chatbot answers to beautiful PDFs",
     template: "%s · Typeset",
   },
   description:
-    "Turn Markdown into a typeset, print-ready PDF. Live paginated preview, real typography controls, no sign-up.",
+    "Paste an answer from ChatGPT, Claude or Gemini - or any Markdown - and download a beautifully typeset PDF. Live page preview, real typography, no sign-up.",
   applicationName: "Typeset",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f6f5f2" },
+    { media: "(prefers-color-scheme: dark)", color: "#121211" },
+  ],
 };
 
 export default function RootLayout({
@@ -37,14 +46,22 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     // The font variables live on <html>, not <body>: `--font-sans`/`--font-mono`
-    // in globals.css are declared on `:root` (= <html>), and their value nests
-    // a var() reference to `--font-archivo`/`--font-jetbrains-mono`. Putting the
-    // font classes on <body> instead put that inner variable one element below
-    // :root, which made the whole chain fail to resolve - every themed font
-    // and, it turned out, every other @theme-derived token (colours, radii)
-    // silently fell back to its CSS-initial value. Same element, no ambiguity.
-    <html lang="en" className={`${archivo.variable} ${jetbrainsMono.variable}`}>
-      <body>{children}</body>
+    // in globals.css are declared on :root and nest var() references to these,
+    // so they must resolve on the same element.
+    //
+    // suppressHydrationWarning: the inline script sets data-theme before React
+    // hydrates, so the attribute legitimately differs from the server's HTML.
+    <html
+      lang="en"
+      className={`${inter.variable} ${jetbrainsMono.variable}`}
+      suppressHydrationWarning
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
+      <body>
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

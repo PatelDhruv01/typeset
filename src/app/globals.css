@@ -1,88 +1,158 @@
 @import "tailwindcss";
 
 /*
- * Design tokens — Modernist.
+ * Design tokens.
  *
- * Flat, architectural, set entirely in Archivo: a near-mono red on a warm
- * off-white, zero corner radius, strong 2px rules. One fixed appearance by
- * design — Modernist is deliberately not a themeable system, so there is no
- * dark variant here (there was one, built for the previous look; it came out
- * along with this token rewrite).
+ * Paper and ink: warm neutrals, one accent - a proofreader's vermilion - used
+ * for the primary action and the active state only. Two appearances, light
+ * and dark, switched by `data-theme` on <html> (set before first paint by the
+ * inline script in layout.tsx, so there is never a flash of the wrong one).
  *
- * Every colour in the UI is one of these semantic names - never a raw hex in a
+ * Every colour in the UI is one of these semantic names, never a raw hex in a
  * component.
  *
- * NOTE: these tokens theme the *application chrome*. The PDF's own theming is a
- * completely separate system (see lib/renderer/css.ts) - a document must not
+ * NOTE: these tokens theme the *application chrome*. The PDF's own theming is
+ * a completely separate system (see lib/renderer/css.ts) - a document must not
  * change appearance because the app's own look changes.
  */
 
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 :root {
-  --background: #f3f2f2;
-  --foreground: #201e1d;
+  color-scheme: light;
 
-  --surface: #eae9e9;
-  --surface-hover: color-mix(in srgb, var(--foreground) 6%, var(--background));
+  /* The app frame, the canvas the pages sit on, and the panels above both. */
+  --background: #f6f5f2;
+  --canvas: #e8e6e0;
+  --surface: #ffffff;
+  --surface-2: #f4f3ef;
+  --surface-hover: #efede8;
 
-  --card: #eae9e9;
-  --card-foreground: #201e1d;
+  --foreground: #1b1a18;
+  --muted-foreground: #66635b;
+  --subtle-foreground: #969288;
 
-  --muted: #eae7e7;
-  --muted-foreground: color-mix(in srgb, var(--foreground) 55%, transparent);
+  --border: #e5e2db;
+  --border-strong: #d3cfc5;
+  --input: #dad6cd;
 
-  --border: color-mix(in srgb, var(--foreground) 40%, transparent);
-  --input: color-mix(in srgb, var(--foreground) 40%, transparent);
-  --ring: #ec3013;
+  /* 4.6:1 against white text - the accent is also a button fill. */
+  --primary: #d4402a;
+  --primary-hover: #bd3520;
+  --primary-foreground: #ffffff;
+  --primary-soft: #fcebe7;
+  --ring: #d4402a;
 
-  --primary: #ec3013;
-  --primary-foreground: #f3f2f2;
+  --success: #1d8a4b;
+  --success-soft: #e6f4ec;
+  --warning: #a86a12;
+  --warning-soft: #fbf1df;
+  --destructive: #c8321f;
+  --destructive-soft: #fbe9e6;
 
-  --accent: #eae9e9;
-  --accent-foreground: #201e1d;
+  /* Kept for the settings controls, which predate the names above. */
+  --card: var(--surface);
+  --card-foreground: var(--foreground);
+  --muted: var(--surface-2);
+  --accent: var(--surface-2);
+  --accent-foreground: var(--foreground);
+  --destructive-foreground: #ffffff;
 
-  /* Modernist is explicitly a mono-accent system - "no second accent was
-     chosen." Its own guidance for small coloured text is to use a deep ramp
-     step rather than the accent itself, which is exactly what an error signal
-     needs anyway - so destructive is accent-700, not a second hue. */
-  --destructive: #ae1800;
-  --destructive-foreground: #f3f2f2;
+  --shadow-sm: 0 1px 2px rgb(27 26 24 / 0.06);
+  --shadow-md: 0 1px 2px rgb(27 26 24 / 0.05), 0 6px 16px -4px rgb(27 26 24 / 0.1);
+  --shadow-lg: 0 2px 6px rgb(27 26 24 / 0.06), 0 22px 48px -12px rgb(27 26 24 / 0.22);
+  --shadow-page: 0 1px 2px rgb(27 26 24 / 0.08), 0 12px 32px -8px rgb(27 26 24 / 0.18);
 
-  --radius: 0px;
+  --radius: 10px;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --background: #121211;
+  --canvas: #0a0a09;
+  --surface: #1a1a18;
+  --surface-2: #222220;
+  --surface-hover: #2a2a27;
+
+  --foreground: #edece8;
+  --muted-foreground: #a7a49c;
+  --subtle-foreground: #75726a;
+
+  --border: #2b2a27;
+  --border-strong: #3a3935;
+  --input: #3a3935;
+
+  /* Dark text on the bright accent: white on this orange would be 3:1. */
+  --primary: #ff6a4d;
+  --primary-hover: #ff8268;
+  --primary-foreground: #1d0b06;
+  --primary-soft: rgb(255 106 77 / 0.14);
+  --ring: #ff6a4d;
+
+  --success: #48c97f;
+  --success-soft: rgb(72 201 127 / 0.13);
+  --warning: #f2b54f;
+  --warning-soft: rgb(242 181 79 / 0.13);
+  --destructive: #ff7262;
+  --destructive-soft: rgb(255 114 98 / 0.13);
+  --destructive-foreground: #1d0b06;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 20px -6px rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 2px 6px rgb(0 0 0 / 0.4), 0 24px 56px -12px rgb(0 0 0 / 0.7);
+  --shadow-page: 0 1px 2px rgb(0 0 0 / 0.5), 0 14px 36px -8px rgb(0 0 0 / 0.6);
 }
 
 /* Expose the tokens to Tailwind so `bg-surface`, `text-muted-foreground`,
  * `border-border` etc. all work as normal utilities. */
 @theme inline {
   --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-canvas: var(--canvas);
   --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
   --color-surface-hover: var(--surface-hover);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-muted: var(--muted);
+  --color-foreground: var(--foreground);
   --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-destructive: var(--destructive);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
 
-  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, "SFMono-Regular", monospace;
 
-  /* Flattened to plain 0px rather than derived via calc(var(--radius) - Npx):
-     that formula goes negative once --radius is 0 (browsers clamp it, but
-     there is no reason to rely on that). Modernist's own token sheet confirms
-     there is no graduated scale here either - its --radius-sm/md/lg are all
-     0px too. */
-  --radius-sm: 0px;
-  --radius-md: 0px;
-  --radius-lg: 0px;
-  --radius-xl: 0px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: var(--radius);
+  --radius-xl: 14px;
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-page: var(--shadow-page);
+
+  --animate-fade-in: ts-fade-in 160ms ease-out both;
+  --animate-pop-in: ts-pop-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-sheet-in-right: ts-sheet-in-right 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-sheet-in-bottom: ts-sheet-in-bottom 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @layer base {
@@ -90,33 +160,81 @@
     border-color: var(--border);
   }
 
+  html,
+  body {
+    height: 100%;
+    /* The app is a fixed frame; only its panes scroll. Without this, iOS
+       rubber-bands the whole page under the toolbars. */
+    overscroll-behavior: none;
+  }
+
   body {
     background-color: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
+    font-size: 14px;
+    font-feature-settings: "cv11", "ss01";
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    -webkit-tap-highlight-color: transparent;
   }
 
-  /* A focus ring you can actually see, on every interactive element. */
+  /* A focus ring you can actually see, on every interactive element, and
+     only for keyboard focus. */
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
+
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 22%, transparent);
+  }
+
+  button,
+  [role="button"] {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: default;
+  }
+
+  /* Quiet scrollbars that still show where you are. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
 }
 
-/* — entrance animations — */
-/* Taken directly from the source design (Typeset.dc.html): editor and
-   settings panels slide in from their respective edges when they open. */
-@keyframes ts-in-left {
-  from { opacity: 0; transform: translateX(-14px); }
-  to { opacity: 1; transform: translateX(0); }
+@layer utilities {
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  }
 }
-@keyframes ts-in-right {
-  from { opacity: 0; transform: translateX(14px); }
-  to { opacity: 1; transform: translateX(0); }
+
+@keyframes ts-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
-@keyframes ts-pop {
-  from { opacity: 0; transform: scale(0.94); }
-  to { opacity: 1; transform: scale(1); }
+@keyframes ts-pop-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ts-sheet-in-right {
+  from { transform: translateX(100%); }
+  to { transform: none; }
+}
+@keyframes ts-sheet-in-bottom {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
 }

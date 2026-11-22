@@ -1,6 +1,6 @@
 import type { DocumentConfig } from "@/lib/config/schema";
 import { resolvePageSize } from "@/lib/config/page-sizes";
-import { fontFaceCss, fontStack, type FontId } from "@/lib/fonts";
+import { emojiStack, fontFaceCss, fontStack, type FontId } from "@/lib/fonts";
 import { CODE_THEME_CSS } from "@/lib/renderer/generated/code-themes";
 import { KATEX_CSS } from "@/lib/renderer/generated/katex-css";
 
@@ -31,6 +31,13 @@ export type CssOptions = {
    * since it is 23 KB plus twenty font files.
    */
   includeKatex?: boolean;
+  /**
+   * Everything the document will draw - its body markup, cover and contents.
+   * When given, only the font files that text needs are emitted; this
+   * stylesheet's own `content:` strings (running heads, watermark) are counted
+   * automatically. When omitted, every file in every fallback chain is emitted.
+   */
+  text?: string;
 };
 
 /** CSS-escape a string for use in a `content:` value. */
@@ -154,12 +161,24 @@ function marginBoxes(
 // Main
 // ---------------------------------------------------------------------------
 
+/** The faces a document is set in: body, headings and code. */
+export function documentFonts(config: DocumentConfig): FontId[] {
+  const { bodyFont, monoFont, headingFont } = config.typography;
+  return [
+    ...new Set<FontId>([
+      bodyFont,
+      headingFont === "inherit" ? bodyFont : headingFont,
+      monoFont,
+    ]),
+  ];
+}
+
 export function buildDocumentCss(
   config: DocumentConfig,
   context: SlotContext,
   options: CssOptions = {},
 ): string {
-  const { resolveUrl, includeKatex = true } = options;
+  const { resolveUrl, includeKatex = true, text } = options;
   const { page, typography: type, theme, structure, watermark } = config;
 
   const size = resolvePageSize(
@@ -173,7 +192,7 @@ export function buildDocumentCss(
   const headingFont: FontId =
     type.headingFont === "inherit" ? bodyFont : type.headingFont;
 
-  const usedFonts = [...new Set<FontId>([bodyFont, monoFont, headingFont])];
+  const usedFonts = documentFonts(config);
 
   // Modular scale. h4 sits at body size and each step up multiplies by the
   // ratio; h5/h6 are fixed below it. Anchoring at h4 rather than h6 keeps h1
@@ -191,7 +210,9 @@ export function buildDocumentCss(
   const rules: string[] = [];
 
   // --- assets -------------------------------------------------------------
-  rules.push("/* fonts */", fontFaceCss(usedFonts, resolveUrl));
+  // Fonts are written last but placed first: which files are needed depends
+  // on every string this stylesheet draws, running heads and watermark
+  // included, and those are only known once the rest of it exists.
 
   const codeTheme = CODE_THEME_CSS[theme.codeTheme];
   if (codeTheme) rules.push("/* syntax highlighting */", codeTheme);
@@ -504,6 +525,22 @@ pre > code {
   /* highlight.js themes set their own background on .hljs; the page decides
      that, not the theme. */
   background-color: transparent !important;
+}`);
+
+  // --- emoji --------------------------------------------------------------
+  // Each emoji sequence is wrapped in a span (see lib/text/emoji.ts) so the
+  // colour font is asked first, ahead of any text font with a monochrome
+  // glyph for the same character. Colour glyphs have no bold or italic, and a
+  // synthesised one smears them. Ligatures stay on even inside code, which
+  // turns them off: that is how 👩🏾‍🔬 and 🇮🇳 are drawn at all.
+  rules.push(`/* emoji */
+.emoji {
+  font-family: ${emojiStack("var(--doc-font-body)")};
+  font-style: normal;
+  font-weight: 400;
+  font-synthesis: none;
+  font-variant-ligatures: normal;
+  letter-spacing: 0;
 }`);
 
   // --- tables -------------------------------------------------------------
@@ -875,5 +912,12 @@ ${avoid.join(",\n")} {
 }`);
   }
 
-  return rules.filter(Boolean).join("\n\n");
+  const rest = rules.filter(Boolean).join("\n\n");
+  const fonts = fontFaceCss(
+    usedFonts,
+    resolveUrl,
+    text === undefined ? undefined : `${text}\n${rest}`,
+  );
+
+  return `/* fonts */\n${fonts}\n\n${rest}`;
 }

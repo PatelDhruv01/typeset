@@ -3,8 +3,11 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { configFromPreset } from "@/lib/config/presets";
 import { documentConfigSchema } from "@/lib/config/schema";
-import { browserEnvironment, closeBrowser } from "@/lib/pdf/browser";
+import { CHATBOT_SAMPLE } from "@/lib/fonts/chatbot-sample";
+import { inlineAssetOrKeep } from "@/lib/pdf/assets";
+import { browserEnvironment, closeBrowser, getBrowser } from "@/lib/pdf/browser";
 import { renderPdf, renderPdfWithFallback } from "@/lib/pdf/render";
+import { renderDocument } from "@/lib/renderer/document";
 
 /**
  * These tests drive a real Chromium, so they are slow and depend on a browser
@@ -239,6 +242,66 @@ describePdf("renderPdf", () => {
       });
       expect(isPdf(result.pdf)).toBe(true);
       expect(result.paginatedBy).toBe("chromium");
+    },
+    TIMEOUT,
+  );
+
+  it.each(["report", "technical"] as const)(
+    "draws every character of chatbot output from a bundled font (%s)",
+    async (preset) => {
+      // The Chromium that prints PDFs on Vercel has exactly one system font,
+      // Open Sans. Any glyph that falls through to the system there prints as
+      // an empty box - but on a developer's machine the system has hundreds of
+      // fonts, which is precisely how this went unnoticed. So rather than look
+      // at the output, ask Chromium which font drew every node, and require
+      // that none of them came from the system.
+      const rendered = renderDocument(CHATBOT_SAMPLE, configFromPreset(preset), {
+        now: FIXED_NOW,
+        resolveUrl: inlineAssetOrKeep,
+      });
+
+      const page = await (await getBrowser()).newPage();
+      try {
+        await page.setContent(rendered.html, { waitUntil: "domcontentloaded" });
+        await page.evaluate(async () => {
+          await document.fonts.ready;
+        });
+
+        const cdp = await page.createCDPSession();
+        await cdp.send("DOM.enable");
+        await cdp.send("CSS.enable");
+        const { root } = await cdp.send("DOM.getDocument", { depth: -1 });
+        const { nodeIds } = await cdp.send("DOM.querySelectorAll", {
+          nodeId: root.nodeId,
+          selector: "body, body *",
+        });
+
+        const systemFonts: Record<string, number> = {};
+        for (const nodeId of nodeIds) {
+          const { fonts } = await cdp.send("CSS.getPlatformFontsForNode", { nodeId });
+          for (const font of fonts) {
+            if (font.isCustomFont) continue;
+            systemFonts[font.familyName] =
+              (systemFonts[font.familyName] ?? 0) + font.glyphCount;
+          }
+        }
+
+        expect(systemFonts).toEqual({});
+      } finally {
+        await page.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "reports nothing missing for chatbot output",
+    async () => {
+      const result = await renderPdf(CHATBOT_SAMPLE, configFromPreset("github"), {
+        now: FIXED_NOW,
+      });
+      expect(isPdf(result.pdf)).toBe(true);
+      expect(result.missingCharacters).toEqual([]);
     },
     TIMEOUT,
   );

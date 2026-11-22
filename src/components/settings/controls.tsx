@@ -10,12 +10,9 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
  * day, so every control in the panel is built from this file. Each one is
  * label-associated and keyboard-operable; none of them own state.
  *
- * Visually these follow the Modernist design system: zero corner radius (most
- * of that comes free from the `--radius-*` tokens all being 0, but `rounded-
- * full` - used for pill-shaped toggles and sliders - is a hardcoded Tailwind
- * utility that does not derive from those tokens, so it needs an explicit
- * square treatment below), flush-left labels, and the one accent colour used
- * sparingly.
+ * Visually they follow the app's tokens (globals.css): quiet bordered fields,
+ * the accent reserved for the selected state, and comfortable hit areas -
+ * 36px fields, 44px rows - because this panel is also a phone's bottom sheet.
  */
 
 export function Field({
@@ -33,16 +30,16 @@ export function Field({
   inline?: boolean;
 }) {
   return (
-    <div className={inline ? "flex items-center justify-between gap-3 py-1.5" : "py-1.5"}>
-      <div className={inline ? "min-w-0" : "mb-1"}>
+    <div className={inline ? "flex min-h-11 items-center justify-between gap-4 py-1.5" : "py-2"}>
+      <div className={inline ? "min-w-0" : "mb-1.5"}>
         <label
           htmlFor={htmlFor}
-          className="block text-xs text-foreground"
+          className="block text-[13px] font-medium text-foreground"
         >
           {label}
         </label>
         {hint && (
-          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+          <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
             {hint}
           </p>
         )}
@@ -53,7 +50,7 @@ export function Field({
 }
 
 export const inputClass =
-  "w-full min-h-[34px] border border-input bg-surface px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-foreground/45 focus-visible:border-primary";
+  "w-full h-9 rounded-lg border border-input bg-surface px-2.5 text-[13px] text-foreground shadow-sm transition-[border-color,box-shadow] hover:border-border-strong focus-visible:border-ring focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/15";
 
 export function TextInput({
   value,
@@ -215,7 +212,7 @@ export function NumberInput({
         className={`${inputClass} w-20 text-right tabular-nums`}
       />
       {unit && (
-        <span className="w-6 shrink-0 text-[11px] text-muted-foreground">
+        <span className="w-6 shrink-0 text-xs text-muted-foreground">
           {unit}
         </span>
       )}
@@ -223,10 +220,10 @@ export function NumberInput({
   );
 }
 
-/** Shared thumb styling for the two `<input type="range">`s below, in the design's flat square accent block rather than a native rounded thumb. */
+/** A round, ringed thumb, large enough to grab on a touch screen. */
 const RANGE_THUMB =
-  "[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:cursor-pointer " +
-  "[&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:cursor-pointer";
+  "[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:size-[18px] [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-primary [&::-webkit-slider-thumb]:bg-surface [&::-webkit-slider-thumb]:shadow-sm [&::-webkit-slider-thumb]:cursor-pointer " +
+  "[&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:size-[18px] [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-primary [&::-moz-range-thumb]:bg-surface [&::-moz-range-thumb]:cursor-pointer";
 
 export function Slider({
   value,
@@ -255,9 +252,9 @@ export function Slider({
         max={max}
         step={step}
         onChange={(event) => onChange(Number(event.target.value))}
-        className={`h-0.5 flex-1 cursor-pointer appearance-none bg-border ${RANGE_THUMB}`}
+        className={`h-1 flex-1 cursor-pointer appearance-none rounded-full bg-border-strong ${RANGE_THUMB}`}
       />
-      <span className="w-12 shrink-0 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+      <span className="w-12 shrink-0 text-right text-xs font-medium tabular-nums text-muted-foreground">
         {format ? format(value) : value}
       </span>
     </div>
@@ -281,13 +278,13 @@ export function Toggle({
       aria-checked={checked}
       aria-label={label}
       onClick={() => onChange(!checked)}
-      className={`relative h-[17px] w-[30px] shrink-0 border border-transparent transition-colors hover:border-foreground ${
-        checked ? "bg-primary" : "bg-border"
+      className={`relative h-6 w-10 shrink-0 rounded-full transition-colors duration-200 ${
+        checked ? "bg-primary" : "bg-border-strong"
       }`}
     >
       <span
-        className={`absolute top-0.5 size-3 bg-background transition-all ${
-          checked ? "left-[15px]" : "left-0.5"
+        className={`absolute top-0.5 size-5 rounded-full bg-white shadow-sm transition-[left] duration-200 ${
+          checked ? "left-[18px]" : "left-0.5"
         }`}
       />
     </button>
@@ -309,20 +306,18 @@ export function Segmented<T extends string>({
     <div
       role="group"
       aria-label={label}
-      className="flex overflow-hidden border border-input"
+      className="flex gap-0.5 rounded-lg border border-border bg-surface-2 p-0.5"
     >
-      {options.map((option, index) => (
+      {options.map((option) => (
         <button
           key={option.value}
           type="button"
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
-          className={`flex-1 border-input px-2 py-1.5 text-[11px] transition-colors ${
-            index > 0 ? "border-l" : ""
-          } ${
+          className={`h-8 min-w-0 flex-1 truncate rounded-md px-2 text-xs font-medium transition-[color,background-color,box-shadow] ${
             value === option.value
-              ? "bg-primary text-primary-foreground"
-              : "text-foreground hover:bg-surface-hover"
+              ? "bg-surface text-foreground shadow-sm dark:bg-surface-hover"
+              : "text-muted-foreground hover:text-foreground"
           }`}
         >
           {option.label}
@@ -366,7 +361,7 @@ export function ColorInput({
   return (
     <div className="flex items-center gap-2">
       <div
-        className="relative size-7 shrink-0 border border-input"
+        className="relative size-9 shrink-0 overflow-hidden rounded-lg border border-input shadow-sm"
         style={{ background: value }}
       >
         <input
@@ -432,10 +427,10 @@ export function ChipGroup<T extends string>({
                   : [...values, option.value],
               )
             }
-            className={`border px-2 py-1 text-[11px] transition-colors ${
+            className={`h-8 rounded-full border px-3 text-xs font-medium transition-colors ${
               active
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-input text-muted-foreground hover:bg-surface-hover"
+                ? "border-primary bg-primary-soft text-primary"
+                : "border-border text-muted-foreground hover:border-border-strong hover:text-foreground"
             }`}
           >
             {option.label}
@@ -457,17 +452,17 @@ export function Tabs<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div className="flex border-b-2 border-border">
+    <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-border px-3 [scrollbar-width:none]">
       {options.map((option) => (
         <button
           key={option.value}
           type="button"
           aria-current={value === option.value ? "true" : undefined}
           onClick={() => onChange(option.value)}
-          className={`flex-1 -mb-0.5 border-b-2 py-2.5 text-xs font-bold transition-colors ${
+          className={`-mb-px shrink-0 border-b-2 px-2.5 py-2.5 text-[13px] font-medium transition-colors ${
             value === option.value
               ? "border-primary text-foreground"
-              : "border-transparent text-muted-foreground hover:bg-surface-hover"
+              : "border-transparent text-muted-foreground hover:text-foreground"
           }`}
         >
           {option.label}
@@ -477,15 +472,15 @@ export function Tabs<T extends string>({
   );
 }
 
-/** A strong 2px rule, separating kicker groups within a tab. */
+/** A rule separating groups of fields within a tab. */
 export function Hr() {
-  return <div className="my-4 h-0.5 bg-border" role="separator" />;
+  return <div className="my-4 h-px bg-border" role="separator" />;
 }
 
 /** A labelled divider inside a tab - the small uppercase kicker above a group of fields. */
 export function SubHeading({ children }: { children: ReactNode }) {
   return (
-    <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+    <p className="mb-1 mt-1 text-[11px] font-semibold uppercase tracking-wider text-subtle-foreground">
       {children}
     </p>
   );

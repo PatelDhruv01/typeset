@@ -1,4 +1,5 @@
 import type { CoverConfig } from "@/lib/config/schema";
+import { wrapEmojiInHtml } from "@/lib/text/emoji";
 
 /**
  * The cover page.
@@ -25,20 +26,25 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/** Escaped, with emoji wrapped so they draw in colour (see lib/text/emoji.ts). */
+function displayText(value: string): string {
+  return wrapEmojiInHtml(escapeHtml(value));
+}
+
 /** Blank-line-separated plain text to paragraphs. The abstract is not Markdown. */
 function toParagraphs(text: string): string {
   return text
     .split(/\n{2,}/)
     .map((block) => block.trim())
     .filter(Boolean)
-    .map((block) => `<p>${escapeHtml(block).replace(/\n/g, " ")}</p>`)
+    .map((block) => `<p>${displayText(block).replace(/\n/g, " ")}</p>`)
     .join("\n");
 }
 
 function line(className: string, value: string): string {
   return value.trim() === ""
     ? ""
-    : `<div class="${className}">${escapeHtml(value.trim())}</div>`;
+    : `<div class="${className}">${displayText(value.trim())}</div>`;
 }
 
 /**
@@ -84,7 +90,7 @@ export function renderCover(
     logo,
     '<div class="cover-headline">',
     line("cover-organisation", organisation),
-    `<div class="cover-title">${escapeHtml(title.trim())}</div>`,
+    `<div class="cover-title">${displayText(title.trim())}</div>`,
     line("cover-subtitle", subtitle),
     "</div>",
     abstract,
