@@ -185,6 +185,13 @@ export function useWorkspace() {
     [edit],
   );
 
+  /** Changes the text relative to what it is now - safe from stale closures. */
+  const editSource = useCallback(
+    (change: (source: string) => string) =>
+      edit((current) => ({ ...current, source: change(current.source) })),
+    [edit],
+  );
+
   /**
    * Every settings change goes through the schema. Merging a partial and
    * re-parsing means the config in state is always valid, so nothing
@@ -296,6 +303,7 @@ export function useWorkspace() {
     saveState,
     modified,
     setSource,
+    editSource,
     updateConfig,
     applyPreset,
     resetPreset: () => applyPreset(document.presetId),

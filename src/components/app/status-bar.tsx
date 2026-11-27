@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircle, TriangleAlert } from "lucide-react";
+import { TriangleAlert } from "lucide-react";
 
 import type { PreviewStatus } from "@/components/paginated-preview";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -65,19 +65,14 @@ export function StatusBar({
       )}
       {missing.length > 0 && <MissingGlyphs characters={missing} />}
 
+      {/* Progress is shown on the preview itself; this only reports the result. */}
       <span className="ml-auto flex items-center gap-1.5 tabular-nums">
-        {status.state === "laying-out" && paginate && (
-          <>
-            <LoaderCircle className="size-3.5 animate-spin" /> Laying out pages…
-          </>
-        )}
         {status.state === "ready" && paginate && (
           <>
             {status.pages} {status.pages === 1 ? "page" : "pages"}
-            <span className="text-subtle-foreground">· {(status.ms / 1000).toFixed(1)}s</span>
+            <span className="text-subtle-foreground">· laid out in {(status.ms / 1000).toFixed(1)}s</span>
           </>
         )}
-        {!paginate && words > 0 && <span>Continuous view</span>}
       </span>
     </footer>
   );

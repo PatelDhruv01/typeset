@@ -25,29 +25,27 @@ function percent(zoom: number): string {
   return `${Math.round(zoom * 100)}%`;
 }
 
-/** What the canvas shows before there is anything to typeset. */
-function EmptyPage() {
+/**
+ * Shown over the canvas while a document's first pages are laid out - a
+ * shimmering sheet where the page is about to be, rather than an empty pane
+ * or a spinner.
+ */
+function PageSkeleton() {
   return (
-    <div className="grid h-full place-items-center p-6">
-      <div className="flex flex-col items-center text-center">
-        <div className="relative aspect-[210/297] w-40 rounded-[3px] bg-surface p-5 shadow-page">
-          <div className="h-2.5 w-3/5 rounded-full bg-surface-2" />
-          {[100, 92, 96, 70, 0, 100, 88, 94, 54].map((width, index) =>
-            width === 0 ? (
-              <div key={index} className="h-3" />
-            ) : (
-              <div
-                key={index}
-                className="mt-2 h-1.5 rounded-full bg-surface-2"
-                style={{ width: `${width}%` }}
-              />
-            ),
-          )}
-        </div>
-        <p className="mt-5 text-sm font-medium text-foreground">Your PDF appears here</p>
-        <p className="mt-1 max-w-[16rem] text-xs leading-relaxed text-muted-foreground">
-          Page by page, exactly as it will print - updating as you write.
-        </p>
+    <div aria-hidden className="pointer-events-none absolute inset-0 flex justify-center px-5 pt-5">
+      <div className="aspect-[210/297] w-full max-w-[34rem] rounded-[3px] bg-surface p-[8%] shadow-page animate-fade-in">
+        <div className="skeleton h-5 w-3/5 rounded-full" />
+        {[100, 94, 97, 72, 0, 100, 90, 96, 58, 0, 100, 86].map((width, index) =>
+          width === 0 ? (
+            <div key={index} className="h-6" />
+          ) : (
+            <div
+              key={index}
+              className="skeleton mt-3 h-2.5 rounded-full"
+              style={{ width: `${width}%` }}
+            />
+          ),
+        )}
       </div>
     </div>
   );
@@ -80,10 +78,13 @@ export function PreviewPane({
   status,
   onStatus,
   compact,
+  firstLayout,
 }: {
   html: string | null;
   error: string | null;
   empty: boolean;
+  /** No pages of this document have been shown yet: show a skeleton. */
+  firstLayout: boolean;
   paginate: boolean;
   onPaginateChange: (paginate: boolean) => void;
   zoom: Zoom;
@@ -97,15 +98,12 @@ export function PreviewPane({
   compact: boolean;
 }) {
   const layingOut = status.state === "laying-out" && paginate;
-  const pages = status.state === "ready" && paginate ? status.pages : 0;
 
   return (
     <section aria-label="Preview" className="relative h-full min-h-0 bg-canvas">
       {error !== null ? (
         <ErrorCard message={error} />
-      ) : empty || html === null ? (
-        <EmptyPage />
-      ) : (
+      ) : empty || html === null ? null : (
         <PaginatedPreview
           html={html}
           paginate={paginate}
@@ -118,11 +116,13 @@ export function PreviewPane({
         />
       )}
 
+      {firstLayout && error === null && !empty && <PageSkeleton />}
+
       <div
         aria-live="polite"
         className={cn(
-          "pointer-events-none absolute right-3 top-3 flex items-center gap-2 rounded-full border border-border bg-surface/95 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-md backdrop-blur transition-opacity duration-200",
-          layingOut ? "opacity-100" : "opacity-0",
+          "pointer-events-none absolute right-3 top-3 flex items-center gap-2 rounded-full border border-border bg-surface/95 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-md backdrop-blur transition-[opacity,transform] duration-200",
+          layingOut && !firstLayout ? "opacity-100" : "-translate-y-1 opacity-0",
         )}
       >
         <LoaderCircle className="size-3.5 animate-spin" />
@@ -204,15 +204,6 @@ export function PreviewPane({
                 <Plus />
               </Button>
             </Tip>
-
-            {!compact && pages > 0 && (
-              <>
-                <span aria-hidden className="mx-0.5 h-5 w-px bg-border" />
-                <span className="px-2 text-xs tabular-nums text-muted-foreground">
-                  {pages} {pages === 1 ? "page" : "pages"}
-                </span>
-              </>
-            )}
           </div>
         </div>
       )}

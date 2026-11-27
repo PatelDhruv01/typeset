@@ -177,19 +177,21 @@ export function PresetGallery({
               onClick={() => onSelect(id)}
               title={PRESETS[id].bestFor}
               className={cn(
-                "group flex min-w-0 flex-col rounded-xl border p-1.5 text-left transition-[border-color,background-color,box-shadow] duration-150",
+                "group flex min-w-0 flex-col rounded-xl border p-1.5 text-left transition-[border-color,background-color,box-shadow,transform] duration-200 active:scale-[0.98]",
                 active
                   ? "border-primary bg-primary-soft/50 ring-3 ring-primary/12"
-                  : "border-border hover:border-border-strong hover:bg-surface-hover",
+                  : "border-border hover:-translate-y-0.5 hover:border-border-strong hover:bg-surface-hover hover:shadow-md",
               )}
             >
               <span
-                className="relative grid place-items-center rounded-lg bg-canvas"
+                className="relative grid place-items-center overflow-hidden rounded-lg bg-canvas"
                 style={{ height: thumbnailHeight + 22 }}
               >
-                <PresetThumbnail id={id} height={thumbnailHeight} />
+                <span className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-translate-y-1 group-hover:rotate-[-1.5deg]">
+                  <PresetThumbnail id={id} height={thumbnailHeight} />
+                </span>
                 {active && (
-                  <span className="absolute right-1.5 top-1.5 grid size-5 place-items-center rounded-full bg-primary text-primary-foreground shadow-sm">
+                  <span className="absolute right-1.5 top-1.5 grid size-5 place-items-center rounded-full bg-primary text-primary-foreground shadow-sm animate-pop-in">
                     <Check className="size-3" strokeWidth={3} />
                   </span>
                 )}

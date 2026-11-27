@@ -7,6 +7,7 @@ import {
 } from "@/lib/renderer/css";
 import { renderCover } from "@/lib/renderer/cover";
 import { renderToc } from "@/lib/renderer/toc";
+import { firstLine, truncateWords } from "@/lib/text/title";
 import {
   renderMarkdown,
   type ExtractedHeading,
@@ -129,13 +130,19 @@ export function renderDocument(
 
   // Resolution order is the same everywhere: explicit config wins, then front
   // matter, then what the document itself says, then the uploaded filename.
+  // "What the document says" goes beyond a `#` heading: chatbot answers
+  // usually open at `##`, or with a sentence, and used to come out named
+  // "document.pdf". This matches the title the app shows (lib/text/title.ts).
+  const firstHeadingText = parsed.headings[0]?.text.trim() || null;
+  const opening = firstLine(source);
   const title =
     config.output.metadata.title ??
     config.cover.title ??
     asText(parsed.frontMatter.title) ??
     parsed.title ??
-    (sourceName ? sourceName.replace(/\.[^.]+$/, "") : "") ??
-    "";
+    firstHeadingText ??
+    (sourceName ? sourceName.replace(/\.[^.]+$/, "") : null) ??
+    (opening ? truncateWords(opening, 60) : "");
 
   const author =
     config.output.metadata.author ??

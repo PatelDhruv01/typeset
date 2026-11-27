@@ -10,14 +10,19 @@ controls, and no sign-up.
 
 ## Using it
 
-- **Paste a chatbot answer.** Copy a reply and press Ctrl/⌘+V anywhere. Rich
-  text copied from a chat window is converted back to Markdown — headings,
-  lists, tables, code blocks (with their language), KaTeX maths and emoji —
-  and the chat UI's clutter ("Copy code" buttons, language labels, citation
-  markers) is dropped. Text that is already Markdown is used as it is.
-  Ctrl/⌘+Shift+V pastes exactly what was copied.
-- **Pick a style** from the gallery, then fine-tune page, type, colours and
-  structure in Customise.
+- **Paste a chatbot answer.** The start screen asks for one: press Ctrl/⌘+V
+  anywhere, drop a file, pick a sample, or just start typing. Rich text copied
+  from a chat window is converted back to Markdown — headings, lists, tables,
+  code blocks (with their language), KaTeX maths and emoji — and the chat UI's
+  clutter ("Copy code" buttons, language labels, citation markers) is dropped.
+  Text that is already Markdown is used as it is. Ctrl/⌘+Shift+V pastes
+  exactly what was copied.
+- **Leave out the sign-off.** When an answer ends with the assistant's
+  follow-up ("Want me to…?", "Let me know if…"), Typeset offers to remove it.
+- **The pages appear when there is something on them**, beside the editor.
+- **Pick a style** in the Design panel — including **Pocket**, phone-sized
+  pages for reading saved answers offline — then fine-tune page, type,
+  colours and structure.
 - **Download** a PDF (Ctrl/⌘+S), a self-contained HTML page that works
   offline, or the Markdown source.
 - **Everything is saved in your browser** as you type, with a list of recent

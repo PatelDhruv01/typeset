@@ -41,6 +41,8 @@
   --primary-hover: #bd3520;
   --primary-foreground: #ffffff;
   --primary-soft: #fcebe7;
+  /* The warm end of the accent's gradient, for the odd flourish. */
+  --primary-2: #e8813a;
   --ring: #d4402a;
 
   --success: #1d8a4b;
@@ -88,6 +90,7 @@
   --primary-hover: #ff8268;
   --primary-foreground: #1d0b06;
   --primary-soft: rgb(255 106 77 / 0.14);
+  --primary-2: #ffab5e;
   --ring: #ff6a4d;
 
   --success: #48c97f;
@@ -123,6 +126,7 @@
   --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary-soft: var(--primary-soft);
+  --color-primary-2: var(--primary-2);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
   --color-warning: var(--warning);
@@ -153,6 +157,12 @@
   --animate-pop-in: ts-pop-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
   --animate-sheet-in-right: ts-sheet-in-right 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
   --animate-sheet-in-bottom: ts-sheet-in-bottom 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-fade-up: ts-fade-up 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-reveal: ts-reveal 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-panel-in: ts-panel-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-float: ts-float 9s ease-in-out infinite;
+  --animate-shimmer: ts-shimmer 1.6s linear infinite;
+  --animate-bob: ts-bob 2.8s ease-in-out infinite;
 }
 
 @layer base {
@@ -228,6 +238,67 @@
 @keyframes ts-sheet-in-bottom {
   from { transform: translateY(100%); }
   to { transform: none; }
+}
+@keyframes ts-fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+/* The preview pane arriving once there is something to show. */
+@keyframes ts-reveal {
+  from { opacity: 0; transform: translateX(28px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ts-panel-in {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: none; }
+}
+/* Sheets of paper drifting behind the start screen. --r is each sheet's tilt. */
+@keyframes ts-float {
+  0%, 100% { transform: translateY(0) rotate(var(--r, 0deg)); }
+  50% { transform: translateY(-14px) rotate(calc(var(--r, 0deg) + 1.5deg)); }
+}
+@keyframes ts-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+@keyframes ts-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+/* Switching appearance cross-fades instead of snapping. Applied for a moment
+   by lib/app/theme.tsx, never permanently: a standing transition on every
+   element would make hover states feel sluggish. */
+.theme-switching,
+.theme-switching * {
+  transition:
+    background-color 260ms ease,
+    border-color 260ms ease,
+    color 260ms ease,
+    fill 260ms ease !important;
+}
+
+/* An editor alone on the screen writes in a centred column. */
+.editor-centered .cm-content {
+  margin-inline: auto;
+}
+
+/* No current-line band under the placeholder of an empty document: it read
+   as a text box drawn inside the editor. */
+.cm-editor:has(.cm-placeholder) .cm-activeLine {
+  background: transparent;
+}
+
+/* A shimmering placeholder bar, for content that is on its way. */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 25%,
+    color-mix(in srgb, var(--surface-2) 40%, var(--surface)) 50%,
+    var(--surface-2) 75%
+  );
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
 }
 
 @media (prefers-reduced-motion: reduce) {

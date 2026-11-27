@@ -89,12 +89,27 @@ describe("renderDocument", () => {
       );
     });
 
+    it("then any heading - chatbot answers usually open at ##", () => {
+      expect(render("## Quarterly summary\n\nRevenue grew.").fileName).toBe(
+        "Quarterly summary",
+      );
+    });
+
     it("then the uploaded filename, extension removed", () => {
       expect(render("just text", {}, "my-notes.md").fileName).toBe("my-notes");
     });
 
+    it("then the opening words, cut at a word boundary", () => {
+      expect(render("just text").fileName).toBe("just text");
+      expect(
+        render(
+          "Here's a clean, repeatable setup that works the same on macOS, Linux and Windows.",
+        ).fileName,
+      ).toBe("Here's a clean, repeatable setup that works the same on");
+    });
+
     it("and falls back to 'document' with nothing to go on", () => {
-      expect(render("just text").fileName).toBe("document");
+      expect(render("```\ncode only\n```").fileName).toBe("document");
     });
   });
 

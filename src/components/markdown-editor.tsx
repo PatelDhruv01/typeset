@@ -33,6 +33,8 @@ import { tags } from "@lezer/highlight";
 /** What the toolbar, and anything else outside the editor, can ask of it. */
 export type EditorHandle = {
   focus: () => void;
+  /** Focuses with the cursor after the last character, to carry on typing. */
+  focusEnd: () => void;
   /** Replaces the selection (or inserts at the cursor). */
   insert: (text: string) => void;
   /** Wraps each selection in `before`/`after`, or `placeholder` when empty. */
@@ -242,6 +244,12 @@ export function MarkdownEditor({
     ref,
     () => ({
       focus: () => viewRef.current?.focus(),
+      focusEnd: () => {
+        const view = viewRef.current;
+        if (!view) return;
+        view.dispatch({ selection: { anchor: view.state.doc.length }, scrollIntoView: true });
+        view.focus();
+      },
       insert: (text) => {
         const view = viewRef.current;
         if (!view) return;

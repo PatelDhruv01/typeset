@@ -11,7 +11,10 @@ function ThemedToaster() {
   return (
     <Toaster
       theme={resolved}
-      position="bottom-center"
+      // Bottom-right, clear of the status bar and of the preview's floating
+      // toolbar, which sits 12px above the status bar and is 42px tall.
+      position="bottom-right"
+      offset={{ bottom: 96, right: 16 }}
       // Clear of the phone tab bar, which is 64px plus the home indicator.
       mobileOffset={{ bottom: "calc(76px + env(safe-area-inset-bottom))" }}
       gap={8}

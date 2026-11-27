@@ -12,21 +12,24 @@ function Tab({
   label,
   icon,
   badge,
+  disabled = false,
   onClick,
 }: {
   active: boolean;
   label: string;
   icon: ReactNode;
   badge?: string;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "relative flex flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors [&_svg]:size-[22px]",
+        "relative flex flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors disabled:opacity-35 [&_svg]:size-[22px] [&_svg]:transition-transform active:[&_svg]:scale-90",
         active ? "text-primary" : "text-muted-foreground",
       )}
     >
@@ -57,12 +60,15 @@ export function MobileTabBar({
   onStyle,
   styleOpen,
   pages,
+  previewEnabled,
 }: {
   view: MobileView;
   onViewChange: (view: MobileView) => void;
   onStyle: () => void;
   styleOpen: boolean;
   pages: number;
+  /** Nothing to preview yet: the tab is shown, but cannot be chosen. */
+  previewEnabled: boolean;
 }) {
   return (
     <nav
@@ -81,6 +87,7 @@ export function MobileTabBar({
           label="Preview"
           icon={<Eye />}
           badge={pages > 0 ? String(pages) : undefined}
+          disabled={!previewEnabled}
           onClick={() => onViewChange("preview")}
         />
         <Tab active={styleOpen} label="Style" icon={<Palette />} onClick={onStyle} />

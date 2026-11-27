@@ -3,9 +3,7 @@
 import type { ReactNode, RefObject } from "react";
 import {
   Bold,
-  ClipboardPaste,
   Code,
-  FolderOpen,
   Heading2,
   Italic,
   Link2,
@@ -24,10 +22,8 @@ import {
   type ClipboardPayload,
   type EditorHandle,
 } from "@/components/markdown-editor";
-import { Button } from "@/components/ui/button";
-import { Kbd } from "@/components/ui/kbd";
 import { Tip } from "@/components/ui/tooltip";
-import { SAMPLES } from "@/lib/samples";
+import { cn } from "@/lib/cn";
 
 const TABLE_TEMPLATE = "\n| Column | Column |\n| --- | --- |\n| Cell | Cell |\n";
 
@@ -66,9 +62,11 @@ function Divider() {
 export function FormattingToolbar({
   editor,
   modKey,
+  centered = false,
 }: {
   editor: RefObject<EditorHandle | null>;
   modKey: string;
+  centered?: boolean;
 }) {
   const run = (action: (handle: EditorHandle) => void) => () => {
     if (editor.current) action(editor.current);
@@ -78,7 +76,10 @@ export function FormattingToolbar({
     <div
       role="toolbar"
       aria-label="Formatting"
-      className="flex h-11 shrink-0 items-center overflow-x-auto border-b border-border px-2 [scrollbar-width:none]"
+      className={cn(
+        "flex h-11 shrink-0 items-center overflow-x-auto border-b border-border px-2 [scrollbar-width:none]",
+        centered && "justify-center",
+      )}
     >
       <ToolButton label="Heading" onClick={run((e) => e.toggleLinePrefix(() => "## ", /^#{1,6}\s+/))}>
         <Heading2 />
@@ -129,68 +130,10 @@ export function FormattingToolbar({
 }
 
 /**
- * What an empty document shows: the one thing most people came to do - paste
- * a chatbot answer - made obvious, with the alternatives beside it.
+ * The editor and its toolbar. An empty document never shows here with
+ * nothing in it: the start screen (start-screen.tsx) stands in until the user
+ * pastes, opens, picks a sample or chooses to write.
  */
-function EmptyState({
-  modKey,
-  showKeyHint,
-  onPaste,
-  onOpenFile,
-  onSample,
-}: {
-  modKey: string;
-  showKeyHint: boolean;
-  onPaste: () => void;
-  onOpenFile: () => void;
-  onSample: (id: string) => void;
-}) {
-  return (
-    <div className="pointer-events-none absolute inset-0 grid place-items-center overflow-y-auto p-5">
-      <div className="pointer-events-auto w-full max-w-[25rem] rounded-2xl border border-border bg-surface p-6 text-center shadow-md animate-pop-in">
-        <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-primary-soft text-primary">
-          <ClipboardPaste className="size-6" />
-        </span>
-        <h2 className="mt-4 text-lg font-semibold tracking-[-0.01em]">Paste a chatbot answer</h2>
-        <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
-          Copy a reply from ChatGPT, Claude or Gemini and paste it here. Headings, tables,
-          code, maths and emoji all come with it.
-        </p>
-        <div className="mt-5 grid gap-2 sm:grid-cols-2">
-          <Button variant="primary" onClick={onPaste}>
-            <ClipboardPaste /> Paste from clipboard
-          </Button>
-          <Button onClick={onOpenFile}>
-            <FolderOpen /> Open a file
-          </Button>
-        </div>
-        {showKeyHint && (
-          <p className="mt-3 flex items-center justify-center gap-1.5 text-xs text-subtle-foreground">
-            or press <Kbd>{modKey}</Kbd>
-            <Kbd>V</Kbd> anywhere, or just start typing
-          </p>
-        )}
-        <div className="mt-5 border-t border-border pt-4">
-          <p className="text-xs text-muted-foreground">Or start from a sample</p>
-          <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-            {SAMPLES.map((sample) => (
-              <button
-                key={sample.id}
-                type="button"
-                onClick={() => onSample(sample.id)}
-                title={sample.description}
-                className="h-8 rounded-full border border-border px-3 text-xs font-medium text-foreground transition-colors hover:border-border-strong hover:bg-surface-hover"
-              >
-                {sample.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function EditorPane({
   documentId,
   source,
@@ -198,11 +141,7 @@ export function EditorPane({
   editorRef,
   transformPaste,
   modKey,
-  showKeyHint,
-  showToolbar,
-  onPasteFromClipboard,
-  onOpenFile,
-  onSample,
+  centered,
 }: {
   documentId: string;
   source: string;
@@ -210,18 +149,13 @@ export function EditorPane({
   editorRef: RefObject<EditorHandle | null>;
   transformPaste: (payload: ClipboardPayload) => string | null;
   modKey: string;
-  showKeyHint: boolean;
-  showToolbar: boolean;
-  onPasteFromClipboard: () => void;
-  onOpenFile: () => void;
-  onSample: (id: string) => void;
+  /** Alone on the screen: write in a centred column. */
+  centered: boolean;
 }) {
-  const empty = source.trim() === "";
-
   return (
     <section aria-label="Editor" className="flex h-full min-h-0 flex-col bg-surface">
-      {showToolbar && <FormattingToolbar editor={editorRef} modKey={modKey} />}
-      <div className="relative min-h-0 flex-1">
+      <FormattingToolbar editor={editorRef} modKey={modKey} centered={centered} />
+      <div className={cn("relative min-h-0 flex-1", centered && "editor-centered")}>
         <MarkdownEditor
           // A new document gets a new editor: one document's undo history must
           // never replay into another.
@@ -230,17 +164,8 @@ export function EditorPane({
           value={source}
           onChange={onChange}
           transformPaste={transformPaste}
-          placeholder="Start typing Markdown…"
+          placeholder="Start typing Markdown - or paste an answer…"
         />
-        {empty && (
-          <EmptyState
-            modKey={modKey}
-            showKeyHint={showKeyHint}
-            onPaste={onPasteFromClipboard}
-            onOpenFile={onOpenFile}
-            onSample={onSample}
-          />
-        )}
       </div>
     </section>
   );
