@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, FileText, Lock, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, FileText, FolderOpen, Lock, Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -52,6 +52,7 @@ export function DocumentsMenu({
   showSaveState = true,
   onOpen,
   onCreate,
+  onOpenFile,
   onDelete,
   className,
 }: {
@@ -62,6 +63,7 @@ export function DocumentsMenu({
   showSaveState?: boolean;
   onOpen: (id: string) => void;
   onCreate: () => void;
+  onOpenFile: () => void;
   onDelete: (id: string) => void;
   className?: string;
 }) {
@@ -81,8 +83,18 @@ export function DocumentsMenu({
           </button>
         </PopoverTrigger>
         <PopoverContent className="flex w-[min(380px,calc(100vw-24px))] flex-col">
-          <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2.5">
-            <span className="text-[13px] font-semibold">Documents</span>
+          <div className="flex items-center gap-1 border-b border-border px-3 py-2.5">
+            <span className="flex-1 text-[13px] font-semibold">Documents</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                onOpenFile();
+                setOpen(false);
+              }}
+            >
+              <FolderOpen /> Open
+            </Button>
             <Button
               variant="ghost"
               size="sm"

@@ -49,6 +49,45 @@ export function cleanChatbotText(text: string): string {
 }
 
 /**
+ * The offer chat assistants close on - "Want me to add tests?", "Let me know
+ * if you'd like…", "Hope this helps!" - which reads oddly in a saved document.
+ * Only a short final paragraph that opens with one of these phrases counts;
+ * a list, heading, table or code block never does, and neither does the
+ * document's only paragraph.
+ */
+const CLOSING_OFFER =
+  /^(?:would you like|do you want|want me to|shall i|should i|if you(?:'d| would)? like|if you want|if it helps|let me know if|i can also|i could also|i'?d be happy to|happy to help|hope (?:this|that) helps)\b/i;
+
+export type ClosingOffer = {
+  /** The paragraph itself, as it appears in the text. */
+  text: string;
+  /** The Markdown with it (and a rule just above it) removed. */
+  without: string;
+};
+
+export function findClosingOffer(markdown: string): ClosingOffer | null {
+  const blocks = markdown.trimEnd().split(/\n{2,}/);
+  if (blocks.length < 2) return null;
+
+  const last = (blocks.at(-1) ?? "").trim();
+  if (last === "" || last.length > 400) return null;
+  if (/^(?:#{1,6}\s|```|~~~|\||[-*+]\s|\d+[.)]\s|>)/.test(last)) return null;
+
+  const opening = last
+    .replace(/[\p{Extended_Pictographic}\p{Emoji_Modifier}‍️]/gu, "")
+    .replace(/[*_~`]+/g, "")
+    .trim();
+  if (!CLOSING_OFFER.test(opening)) return null;
+
+  // A rule drawn just to set the offer apart goes with it.
+  let keep = blocks.slice(0, -1);
+  if (/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(keep.at(-1) ?? "")) keep = keep.slice(0, -1);
+  if (keep.join("").trim() === "") return null;
+
+  return { text: last, without: `${keep.join("\n\n").trimEnd()}\n` };
+}
+
+/**
  * Plain text that is already Markdown, judged by syntax that only an author
  * writes - a rendered page's text never contains `## ` or a table rule.
  */

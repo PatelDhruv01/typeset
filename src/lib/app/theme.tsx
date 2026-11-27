@@ -53,13 +53,22 @@ function snapshot(): ThemeState {
   return current;
 }
 
+let switchTimer: number | undefined;
+
 function refresh() {
   const next = compute();
   if (current && next.preference === current.preference && next.resolved === current.resolved) {
     return;
   }
+  const root = document.documentElement;
+  if (current && next.resolved !== current.resolved) {
+    // Cross-fade the change (see .theme-switching in globals.css).
+    root.classList.add("theme-switching");
+    window.clearTimeout(switchTimer);
+    switchTimer = window.setTimeout(() => root.classList.remove("theme-switching"), 320);
+  }
   current = next;
-  document.documentElement.dataset.theme = next.resolved;
+  root.dataset.theme = next.resolved;
   for (const listener of listeners) listener();
 }
 

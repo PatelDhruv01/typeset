@@ -18,8 +18,8 @@ export function LogoMark({ className }: { className?: string }) {
 
 export function Logo({ compact = false }: { compact?: boolean }) {
   return (
-    <span className="flex shrink-0 items-center gap-2">
-      <LogoMark />
+    <span className="group flex shrink-0 items-center gap-2">
+      <LogoMark className="transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-rotate-6 group-hover:scale-105" />
       {!compact && (
         <span className="text-[15px] font-semibold tracking-[-0.01em] text-foreground">
           Typeset

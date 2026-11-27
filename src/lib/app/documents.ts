@@ -5,6 +5,7 @@ import {
   type PresetId,
 } from "@/lib/config/presets";
 import { documentConfigSchema, type DocumentConfig } from "@/lib/config/schema";
+import { deriveTitle, plainText, stripFrontMatter, truncateWords } from "@/lib/text/title";
 
 /**
  * Documents, kept in the browser.
@@ -71,58 +72,19 @@ export function newDocumentId(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Titles
+// Titles - one rule for the list, the header and the PDF (lib/text/title.ts)
 // ---------------------------------------------------------------------------
 
-const FRONT_MATTER = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
-
-function plainText(markdown: string): string {
-  return markdown
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/[*_`~]+/g, "")
-    .replace(/<[^>]+>/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function truncate(text: string, length: number): string {
-  return text.length <= length ? text : `${text.slice(0, length - 1).trimEnd()}…`;
-}
-
-/**
- * A short human title for the document list: front matter `title`, else the
- * first heading, else the first line of text. Cheap on purpose - it runs on
- * every autosave - so it reads the source with patterns rather than rendering.
- */
-export function deriveTitle(source: string): string {
-  const frontMatter = FRONT_MATTER.exec(source);
-  if (frontMatter?.[1]) {
-    const title = /^title:\s*["']?(.+?)["']?\s*$/m.exec(frontMatter[1])?.[1];
-    if (title) return truncate(plainText(title), 80);
-  }
-
-  const body = source.replace(FRONT_MATTER, "");
-  const heading = /^#{1,6}\s+(.+?)\s*#*\s*$/m.exec(body)?.[1];
-  if (heading && plainText(heading)) return truncate(plainText(heading), 80);
-
-  for (const line of body.split(/\r?\n/)) {
-    const text = plainText(line.replace(/^\s*(?:[-*+>]|\d+\.)\s+/, ""));
-    if (text && !/^(?:```|~~~|\|)/.test(line.trim())) return truncate(text, 80);
-  }
-
-  return "Untitled";
-}
+export { deriveTitle };
 
 function excerptOf(source: string, title: string): string {
   const text = plainText(
-    source
-      .replace(FRONT_MATTER, "")
+    stripFrontMatter(source)
       .replace(/^```[\s\S]*?^```/gm, " ")
       .replace(/^#{1,6}\s+/gm, ""),
   );
   const rest = text.startsWith(title.replace(/…$/, "")) ? text.slice(title.length) : text;
-  return truncate(rest.trim(), 140);
+  return truncateWords(rest.trim(), 140, true);
 }
 
 function countWords(source: string): number {

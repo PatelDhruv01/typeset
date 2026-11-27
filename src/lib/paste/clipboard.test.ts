@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   cleanChatbotText,
   clipboardToMarkdown,
+  findClosingOffer,
   hasRichStructure,
   htmlToMarkdown,
   looksLikeMarkdown,
@@ -126,6 +127,32 @@ describe("clipboardToMarkdown", () => {
   it("cleans the plain text too", () => {
     const result = clipboardToMarkdown({ text: "Fact.citeturn0news4 More.【4†source】" });
     expect(result.markdown).toBe("Fact. More.");
+  });
+});
+
+describe("findClosingOffer", () => {
+  it("finds the assistant's closing offer, with the rule above it", () => {
+    const answer =
+      "## Setup\n\nRun the installer.\n\n---\n\n💡 *Want me to add a CI workflow that runs the tests?*\n";
+    const offer = findClosingOffer(answer);
+    expect(offer?.text).toBe("💡 *Want me to add a CI workflow that runs the tests?*");
+    expect(offer?.without).toBe("## Setup\n\nRun the installer.\n");
+  });
+
+  it.each([
+    "Let me know if you'd like a version for Windows.",
+    "If you want, I can also turn this into a checklist.",
+    "Would you like me to explain the second step?",
+    "Hope this helps!",
+  ])("recognises %j", (closing) => {
+    expect(findClosingOffer(`Some answer.\n\n${closing}`)?.text).toBe(closing);
+  });
+
+  it("leaves ordinary endings, lists and lone paragraphs alone", () => {
+    expect(findClosingOffer("Intro.\n\nThat is the whole method.")).toBeNull();
+    expect(findClosingOffer("Intro.\n\n- Would you like fries with that?")).toBeNull();
+    expect(findClosingOffer("Would you like to know more?")).toBeNull();
+    expect(findClosingOffer("Intro.\n\n## Should I use Docker?")).toBeNull();
   });
 });
 

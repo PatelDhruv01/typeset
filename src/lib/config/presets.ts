@@ -22,7 +22,8 @@ export type PresetId =
   | "academic"
   | "book"
   | "minimal"
-  | "night";
+  | "night"
+  | "pocket";
 
 export type StylePreset = {
   id: PresetId;
@@ -311,6 +312,53 @@ const PRESET_LIST: StylePreset[] = [
         quoteStyle: "bar",
       },
       footer: { enabled: true, right: "{page} / {pages}", colour: "#8b949e" },
+    },
+  },
+
+  {
+    id: "pocket",
+    name: "Pocket",
+    tagline: "Phone-sized pages, big type. Read it anywhere, offline.",
+    bestFor:
+      "Answers saved to read later on a phone or e-reader: each page fits the screen, so there is no pinching or sideways scrolling.",
+    config: {
+      preset: "pocket",
+      // Roughly a phone screen's proportions. A phone shows a PDF page at the
+      // screen's width, so a small page with 10.5pt type reads at a
+      // comfortable size where an A4 page would need zooming on every line.
+      page: {
+        size: "custom",
+        customWidth: 100,
+        customHeight: 178,
+        margins: { top: 9, right: 7, bottom: 11, left: 7 },
+      },
+      typography: {
+        bodyFont: "literata",
+        headingFont: "inter",
+        monoFont: "jetbrains-mono",
+        baseFontSize: 10.5,
+        lineHeight: 1.55,
+        headingScale: 1.15,
+        codeFontScale: 0.82,
+        // Code lines cannot scroll on paper; on a page this narrow they wrap.
+        wrapCode: true,
+        align: "left",
+      },
+      theme: {
+        text: "#1f1d1a",
+        heading: "#141414",
+        muted: "#6b6660",
+        link: "#b3401f",
+        accent: "#b3401f",
+        border: "#e3ded6",
+        codeBackground: "#f6f3ee",
+        codeTheme: "github",
+        headingRules: "none",
+        tableStyle: "horizontal",
+        quoteStyle: "bar",
+      },
+      header: { enabled: false },
+      footer: { enabled: true, left: "", center: "{page} / {pages}", right: "", fontSize: 7 },
     },
   },
 ];

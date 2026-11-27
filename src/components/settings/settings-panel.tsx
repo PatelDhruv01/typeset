@@ -242,7 +242,7 @@ export function SettingsPanel({
     <aside className="flex h-full min-h-0 w-full flex-col bg-surface">
       {showHeader && (
         <div className="flex h-12 shrink-0 items-center gap-2 px-4">
-          <span className="text-[15px] font-semibold">Customise</span>
+          <span className="text-[15px] font-semibold">Design</span>
           <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
             {PRESETS[presetId].name}
             {modified ? " · edited" : ""}

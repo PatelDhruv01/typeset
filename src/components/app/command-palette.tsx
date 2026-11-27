@@ -203,8 +203,8 @@ export function CommandPalette({
                   {editorVisible ? "Hide editor" : "Show editor"}
                 </Item>
               )}
-              <Item value={settingsVisible ? "Hide customise panel" : "Customise the document"} icon={<SlidersHorizontal />} keywords={["settings", "customize", "margins", "fonts"]} onSelect={run(actions.onToggleSettings)}>
-                {settingsVisible ? "Hide customise panel" : "Customise the document"}
+              <Item value={settingsVisible ? "Hide the Design panel" : "Open the Design panel"} icon={<SlidersHorizontal />} keywords={["settings", "customise", "customize", "margins", "fonts", "style"]} onSelect={run(actions.onToggleSettings)}>
+                {settingsVisible ? "Hide the Design panel" : "Open the Design panel"}
               </Item>
               <Item value="Preview as pages" icon={<Files />} checked={paginate} onSelect={run(() => actions.onPaginate(true))}>
                 Preview as pages

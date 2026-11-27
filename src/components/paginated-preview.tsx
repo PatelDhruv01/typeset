@@ -62,8 +62,11 @@ type Props = {
  */
 const PREVIEW_CHROME = `
 :root { color-scheme: light; }
-html, body { background: transparent !important; }
-html.paginated body { margin: 0; }
+html { background: transparent !important; }
+/* Only paginated: there each .pagedjs_page is the sheet. In the continuous
+   view the body *is* the sheet - making it transparent too showed the app's
+   canvas through the page, dark text on near-black in dark mode. */
+html.paginated body { background: transparent !important; margin: 0; }
 .pagedjs_pages {
   display: flex !important;
   flex-direction: column;
@@ -175,8 +178,15 @@ export function PaginatedPreview({
     // color-scheme matches the document's own: when an iframe's scheme differs
     // from its document's, Chrome paints an opaque backdrop behind it - a white
     // slab around the pages whenever the app itself is in dark mode.
+    //
+    // pointer-events:none makes the preview a picture of the document rather
+    // than a second browser: a click on a link in it used to navigate the
+    // frame away, a file dropped on it bypassed the app's own drop handling,
+    // and a click moved keyboard focus inside, out of reach of the shortcuts.
+    // Wheel and touch scrolling fall through to the pane, which scrolls.
+    frame.tabIndex = -1;
     frame.style.cssText =
-      `position:absolute;top:0;left:0;display:block;width:100%;height:${LAYOUT_VIEWPORT_PX}px;border:0;visibility:hidden;color-scheme:light`;
+      `position:absolute;top:0;left:0;display:block;width:100%;height:${LAYOUT_VIEWPORT_PX}px;border:0;visibility:hidden;color-scheme:light;pointer-events:none`;
     host.append(frame);
 
     const settle = (doc: Document) => {
@@ -219,6 +229,12 @@ export function PaginatedPreview({
       doc.documentElement.style.overflow = "hidden";
       doc.body.style.overflow = "hidden";
 
+      // Pages arriving for the first time ease in; later layouts (every pause
+      // in typing) swap in place, because a fade on each would flicker.
+      const firstAppearance = ![...host.children].some(
+        (child) => child !== frame && (child as HTMLElement).style.visibility === "visible",
+      );
+
       for (const child of [...host.children]) {
         if (child !== frame) child.remove();
       }
@@ -227,6 +243,16 @@ export function PaginatedPreview({
       frame.style.visibility = "visible";
       frame.style.width = "100%";
       frame.style.height = "100%";
+
+      if (firstAppearance && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        frame.animate(
+          [
+            { opacity: 0, transform: "translateY(10px)" },
+            { opacity: 1, transform: "none" },
+          ],
+          { duration: 420, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
+        );
+      }
 
       setSize({ width, height });
     };

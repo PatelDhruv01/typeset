@@ -2,16 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import {
-  ChevronDown,
-  FileUp,
-  Palette,
-  PanelLeft,
-  PanelLeftClose,
-  RotateCcw,
-  Search,
-  SlidersHorizontal,
-} from "lucide-react";
+import { FileUp, Palette, PanelLeft, PanelLeftClose, RotateCcw, Search } from "lucide-react";
 
 import { CommandPalette } from "@/components/app/command-palette";
 import { DocumentsMenu } from "@/components/app/documents-menu";
@@ -24,16 +15,15 @@ import { PresetGallery } from "@/components/app/preset-gallery";
 import { PreviewPane, type Zoom } from "@/components/app/preview-pane";
 import { ShortcutsDialog } from "@/components/app/shortcuts-dialog";
 import { Splitter } from "@/components/app/splitter";
+import { StartScreen } from "@/components/app/start-screen";
 import { StatusBar } from "@/components/app/status-bar";
 import type { ClipboardPayload, EditorHandle } from "@/components/markdown-editor";
 import type { PreviewStatus } from "@/components/paginated-preview";
 import { SettingsPanel } from "@/components/settings/settings-panel";
 import { Button } from "@/components/ui/button";
 import { Dialog, SheetContent } from "@/components/ui/dialog";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Segmented } from "@/components/ui/segmented";
 import { Tip } from "@/components/ui/tooltip";
-import { deriveTitle } from "@/lib/app/documents";
 import { exportMarkdown, exportPdf, exportStandaloneHtml } from "@/lib/app/export";
 import { hasModKey, useLayout, useMediaQuery, useModKey, useWideDesktop } from "@/lib/app/media";
 import { setThemePreference } from "@/lib/app/theme";
@@ -41,10 +31,16 @@ import { useWorkspace } from "@/lib/app/use-workspace";
 import { cn } from "@/lib/cn";
 import { PRESETS } from "@/lib/config/presets";
 import { useDebouncedValue } from "@/lib/hooks";
-import { clipboardToMarkdown, hasChatbotArtefacts, readClipboard } from "@/lib/paste/clipboard";
+import {
+  clipboardToMarkdown,
+  findClosingOffer,
+  hasChatbotArtefacts,
+  readClipboard,
+} from "@/lib/paste/clipboard";
 import { absoluteAssetUrl } from "@/lib/renderer/asset-urls";
 import { renderDocument, toSafeFileName } from "@/lib/renderer/document";
 import { SAMPLES } from "@/lib/samples";
+import { deriveTitle, truncateWords } from "@/lib/text/title";
 
 /** Long enough that typing never triggers a layout; short enough to feel live. */
 const SOURCE_DEBOUNCE_MS = 450;
@@ -85,7 +81,7 @@ function AppSkeleton() {
       <header className="flex h-14 shrink-0 items-center border-b border-border bg-surface px-4">
         <Logo />
       </header>
-      <div className="min-h-0 flex-1 bg-canvas" />
+      <div className="min-h-0 flex-1 bg-background" />
     </div>
   );
 }
@@ -102,12 +98,23 @@ export default function Home() {
 
   const [view, setView] = useState<MobileView>("write");
   const [showEditor, setShowEditor] = useState(true);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  // The Design panel docks beside the pages on wide screens and slides over
+  // them as a sheet elsewhere. Separate states, so resizing a window with the
+  // docked panel open never pops a modal sheet up out of nowhere.
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [paginate, setPaginate] = useState(true);
   const [zoom, setZoom] = useState<Zoom>("fit");
   const [effectiveZoom, setEffectiveZoom] = useState(1);
   const [preview, setPreview] = useState<PreviewStatus>({ state: "idle" });
+  // The document whose pages have been on screen at least once - until then,
+  // the preview shows a skeleton rather than the previous document's pages.
+  const [readyDocId, setReadyDocId] = useState<string | null>(null);
+  // The empty document the user chose to write in; any other empty document
+  // shows the start screen.
+  const [writingId, setWritingId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [justDownloaded, setJustDownloaded] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -119,21 +126,35 @@ export default function Home() {
   // For the "Try again" button on a failed download, which outlives the
   // render that created it and must retry with the document as it is now.
   const retryDownloadRef = useRef<() => void>(() => {});
+  const docIdRef = useRef(doc.id);
+  useEffect(() => {
+    docIdRef.current = doc.id;
+  }, [doc.id]);
 
   const isDesktop = layout === "desktop";
   const isPhone = layout === "phone";
   const settingsDocked = isDesktop && wide;
   const empty = doc.source.trim() === "";
+  const startScreen = empty && writingId !== doc.id;
 
   // --- rendering ------------------------------------------------------------
 
   // Rendering Markdown is fast; laying it out into pages is not. Debouncing
-  // both inputs means the preview is rebuilt only once the user pauses.
-  const settledSource = useDebouncedValue(doc.source, SOURCE_DEBOUNCE_MS);
+  // both inputs means the preview is rebuilt only once the user pauses. The
+  // text is debounced together with its document's id: switching document
+  // must show the new one at once, not the old one for another half-second.
+  const pending = useMemo(() => ({ id: doc.id, source: doc.source }), [doc.id, doc.source]);
+  const settled = useDebouncedValue(pending, SOURCE_DEBOUNCE_MS);
+  const settledSource = settled.id === doc.id ? settled.source : doc.source;
   const settledConfig = useDebouncedValue(doc.config, CONFIG_DEBOUNCE_MS);
 
+  // The pages appear once there is something on them - and only after a
+  // pause, so the first keystroke of a new document doesn't shove the editor
+  // aside mid-word.
+  const hasContent = settledSource.trim() !== "";
+
   const rendered = useMemo(() => {
-    if (!hydrated) return null;
+    if (!hydrated || !hasContent) return null;
     try {
       return {
         ok: true as const,
@@ -150,42 +171,72 @@ export default function Home() {
         message: error instanceof Error ? error.message : String(error),
       };
     }
-  }, [hydrated, settledSource, settledConfig, doc.sourceName]);
+  }, [hydrated, hasContent, settledSource, settledConfig, doc.sourceName]);
 
   const title = useMemo(() => (empty ? "Untitled" : deriveTitle(doc.source)), [doc.source, empty]);
 
+  // What the PDF will be called - the same rule the server applies, so the
+  // name shown is the name downloaded.
   const fileName =
     doc.config.output.fileName ??
-    (rendered?.ok && rendered.value.fileName !== "document"
-      ? rendered.value.fileName
-      : toSafeFileName(title));
+    (rendered?.ok ? rendered.value.fileName : toSafeFileName(title));
 
   useEffect(() => {
     window.document.title = empty ? "Typeset" : `${title} · Typeset`;
   }, [title, empty]);
 
+  // --- small things that happen after a paste ----------------------------------
+
+  /** Offers to drop a chatbot's closing "Want me to…?" from the document. */
+  const offerClosingRemoval = useCallback(
+    (markdown: string, converted: boolean) => {
+      const offer = findClosingOffer(markdown);
+      const remove = {
+        label: "Remove it",
+        onClick: () =>
+          workspace.editSource((source) => {
+            const found = findClosingOffer(source);
+            return found && found.text === offer?.text ? found.without : source;
+          }),
+      };
+
+      if (offer) {
+        const quote = truncateWords(offer.text.replace(/[*_]/g, ""), 60, true);
+        toast(converted ? "Pasted as Markdown" : "Remove the closing question?", {
+          description: converted
+            ? `It ends with “${quote}”. Remove that from the PDF?`
+            : `“${quote}” - a chat follow-up reads oddly in a saved document.`,
+          action: { ...remove, label: "Remove" },
+          duration: 9000,
+        });
+      } else if (converted) {
+        toast.success("Pasted as Markdown", {
+          description: "Headings, lists, tables, code and maths were kept.",
+          duration: 3000,
+        });
+      }
+    },
+    [workspace],
+  );
+
   // --- getting text in ---------------------------------------------------------
 
   /** New text from outside the editor: fills an empty document, else a new one. */
   const importText = useCallback(
-    (markdown: string, options: { sourceName?: string; message?: string } = {}) => {
+    (markdown: string, options: { sourceName?: string; converted?: boolean } = {}) => {
       if (empty && !options.sourceName) {
         workspace.setSource(markdown);
       } else {
         const id = workspace.createDocument({ source: markdown, sourceName: options.sourceName });
-        toast.success(options.message ?? "Pasted into a new document", {
+        toast.success("Pasted into a new document", {
           description: "Your previous document is saved in Documents.",
-          action: {
-            label: "Undo",
-            onClick: () => {
-              workspace.removeDocument(id);
-            },
-          },
+          action: { label: "Undo", onClick: () => workspace.removeDocument(id) },
         });
       }
+      offerClosingRemoval(markdown, options.converted ?? false);
       if (isPhone) setView("preview");
     },
-    [empty, isPhone, workspace],
+    [empty, isPhone, offerClosingRemoval, workspace],
   );
 
   const openFile = useCallback(
@@ -205,17 +256,17 @@ export default function Home() {
 
   const pasteFromClipboard = useCallback(async () => {
     try {
-      const { markdown } = await readClipboard();
+      const { markdown, converted } = await readClipboard();
       if (markdown.trim() === "") {
         toast("The clipboard is empty", { description: "Copy an answer first, then try again." });
         return;
       }
-      importText(markdown);
+      importText(markdown, { converted });
     } catch {
       toast.error("Couldn't read the clipboard", {
         description: finePointer
           ? `Your browser blocked it. Press ${modKey}+V instead.`
-          : "Your browser blocked it. Long-press in the editor and choose Paste.",
+          : "Your browser blocked it. Choose Write, then long-press and Paste.",
       });
     }
   }, [finePointer, importText, modKey]);
@@ -230,18 +281,38 @@ export default function Home() {
     [empty, workspace],
   );
 
+  /** "Write" on the start screen, or a key typed straight onto it. */
+  const startWriting = useCallback(
+    (firstKey?: string) => {
+      setWritingId(docIdRef.current);
+      setView("write");
+      if (firstKey) workspace.setSource(firstKey);
+      // After React has mounted the editor in place of the start screen.
+      requestAnimationFrame(() => requestAnimationFrame(() => editorRef.current?.focusEnd()));
+    },
+    [workspace],
+  );
+
+  const onEditorChange = useCallback(
+    (source: string) => {
+      // Typing in this document's editor keeps it in the editor even if it is
+      // emptied again - never yank someone back to the start screen mid-edit.
+      setWritingId(docIdRef.current);
+      workspace.setSource(source);
+    },
+    [workspace],
+  );
+
   /** Paste inside the editor: rich chatbot HTML becomes Markdown. */
-  const transformPaste = useCallback(({ html, text }: ClipboardPayload): string | null => {
-    const result = clipboardToMarkdown({ html, text });
-    if (result.converted) {
-      toast.success("Pasted as Markdown", {
-        description: "Headings, lists, tables, code and maths were kept.",
-        duration: 3000,
-      });
-      return result.markdown;
-    }
-    return text !== null && hasChatbotArtefacts(text) ? result.markdown : null;
-  }, []);
+  const transformPaste = useCallback(
+    ({ html, text }: ClipboardPayload): string | null => {
+      const result = clipboardToMarkdown({ html, text });
+      offerClosingRemoval(result.markdown, result.converted);
+      if (result.converted) return result.markdown;
+      return text !== null && hasChatbotArtefacts(text) ? result.markdown : null;
+    },
+    [offerClosingRemoval],
+  );
 
   // Paste anywhere outside a text field: the fastest path from a chat window
   // to a PDF is Ctrl+V the moment the app opens.
@@ -258,13 +329,13 @@ export default function Home() {
         return;
       }
 
-      const { markdown } = clipboardToMarkdown({
+      const { markdown, converted } = clipboardToMarkdown({
         html: data.getData("text/html") || null,
         text: data.getData("text/plain") || null,
       });
       if (markdown.trim() === "") return;
       event.preventDefault();
-      importText(markdown);
+      importText(markdown, { converted });
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
@@ -286,7 +357,12 @@ export default function Home() {
     try {
       const result = await exportPdf({
         source: doc.source,
-        config: doc.config,
+        // The name on screen goes with the request, so it is the name that
+        // comes back - whatever the server would have derived on its own.
+        config: {
+          ...doc.config,
+          output: { ...doc.config.output, fileName: doc.config.output.fileName ?? fileName },
+        },
         sourceName: doc.sourceName,
         fallbackName: fileName,
       });
@@ -296,6 +372,8 @@ export default function Home() {
           result.degraded ? " · without running heads" : ""
         }`,
       });
+      setJustDownloaded(true);
+      window.setTimeout(() => setJustDownloaded(false), 2400);
       if (result.missing.length > 0) {
         toast.warning(
           result.missing.length === 1
@@ -322,13 +400,14 @@ export default function Home() {
 
   const downloadHtml = useCallback(async () => {
     if (empty) return;
+    const name = toSafeFileName(fileName);
     try {
       const { html } = renderDocument(doc.source, doc.config, {
         sourceName: doc.sourceName,
         resolveUrl: absoluteAssetUrl,
       });
-      await exportStandaloneHtml(html, fileName);
-      toast.success(`Downloaded ${fileName}.html`, {
+      await exportStandaloneHtml(html, name);
+      toast.success(`Downloaded ${name}.html`, {
         description: "Opens in any browser, even offline.",
       });
     } catch (error) {
@@ -340,8 +419,9 @@ export default function Home() {
 
   const downloadMarkdown = useCallback(() => {
     if (empty) return;
-    exportMarkdown(doc.source, fileName);
-    toast.success(`Downloaded ${fileName}.md`);
+    const name = toSafeFileName(fileName);
+    exportMarkdown(doc.source, name);
+    toast.success(`Downloaded ${name}.md`);
   }, [doc.source, empty, fileName]);
 
   // --- documents -----------------------------------------------------------------
@@ -356,6 +436,11 @@ export default function Home() {
     },
     [workspace],
   );
+
+  const toggleDesign = useCallback(() => {
+    if (settingsDocked) setPanelOpen((open) => !open);
+    else setSheetOpen((open) => !open);
+  }, [settingsDocked]);
 
   // --- keyboard -------------------------------------------------------------------
 
@@ -389,6 +474,7 @@ export default function Home() {
 
   const onPreviewStatus = useCallback((status: PreviewStatus) => {
     setPreview(status);
+    if (status.state === "ready") setReadyDocId(docIdRef.current);
     // A failed layout would leave the previous pages on screen, silently
     // misrepresenting the document. Continuous is always correct, only
     // unpaginated - the right content in the wrong shape beats the reverse.
@@ -414,7 +500,11 @@ export default function Home() {
   const words = rendered?.ok ? rendered.value.wordCount : 0;
   const headings = rendered?.ok ? rendered.value.headings.length : 0;
   const missing = rendered?.ok && !empty ? rendered.value.missingCharacters : [];
-  const pages = preview.state === "ready" && paginate ? preview.pages : 0;
+  const pages = preview.state === "ready" && paginate && hasContent ? preview.pages : 0;
+  const firstLayout = hasContent && readyDocId !== doc.id && preview.state !== "error";
+  const designOpen = settingsDocked ? panelOpen : sheetOpen;
+  // Phones and tablets show one pane; with nothing to preview, it is the editor.
+  const paneView: MobileView = hasContent ? view : "write";
 
   // --- pieces ------------------------------------------------------------------------
 
@@ -443,19 +533,15 @@ export default function Home() {
     />
   );
 
-  const editorPane = (
+  const editorPane = (centered: boolean) => (
     <EditorPane
       documentId={doc.id}
       source={doc.source}
-      onChange={workspace.setSource}
+      onChange={onEditorChange}
       editorRef={editorRef}
       transformPaste={transformPaste}
       modKey={modKey}
-      showKeyHint={finePointer}
-      showToolbar
-      onPasteFromClipboard={() => void pasteFromClipboard()}
-      onOpenFile={() => fileInputRef.current?.click()}
-      onSample={loadSample}
+      centered={centered}
     />
   );
 
@@ -463,7 +549,7 @@ export default function Home() {
     <PreviewPane
       html={rendered?.ok ? rendered.value.html : null}
       error={rendered && !rendered.ok ? rendered.message : null}
-      empty={empty}
+      empty={!hasContent}
       paginate={paginate}
       onPaginateChange={setPaginate}
       zoom={zoom}
@@ -474,11 +560,13 @@ export default function Home() {
       status={preview}
       onStatus={onPreviewStatus}
       compact={isPhone}
+      firstLayout={firstLayout}
     />
   );
 
   const exportProps = {
     busy: exporting,
+    done: justDownloaded,
     disabled: empty,
     modKey,
     fileName,
@@ -488,62 +576,6 @@ export default function Home() {
     onHtml: () => void downloadHtml(),
     onMarkdown: downloadMarkdown,
   };
-
-  const moreMenu = (
-    <MoreMenu
-      modKey={modKey}
-      showExports={isPhone}
-      showKeyboardHelp={finePointer}
-      onNew={() => workspace.createDocument()}
-      onOpenFile={() => fileInputRef.current?.click()}
-      onPaste={() => void pasteFromClipboard()}
-      onSample={loadSample}
-      onPdf={() => void downloadPdf()}
-      onHtml={() => void downloadHtml()}
-      onMarkdown={downloadMarkdown}
-      onShortcuts={() => setShortcutsOpen(true)}
-      onCommandMenu={() => setCommandOpen(true)}
-    />
-  );
-
-  const stylePicker = (
-    <Popover>
-      <Tip label="Document style">
-        <PopoverTrigger asChild>
-          <Button variant="ghost" className="data-[state=open]:bg-surface-hover">
-            <Palette />
-            <span className="max-w-[9rem] truncate">{PRESETS[doc.presetId].name}</span>
-            {workspace.modified && (
-              <span aria-label="edited" className="size-1.5 rounded-full bg-primary" />
-            )}
-            <ChevronDown className="!size-3.5 text-muted-foreground" />
-          </Button>
-        </PopoverTrigger>
-      </Tip>
-      <PopoverContent align="end" className="w-[min(640px,calc(100vw-24px))] p-3">
-        <div className="mb-3 flex items-center justify-between gap-3 px-1">
-          <div>
-            <p className="text-[13px] font-semibold">Document style</p>
-            <p className="text-xs text-muted-foreground">
-              Typefaces, page and colours in one click. Fine-tune in Customise.
-            </p>
-          </div>
-          {workspace.modified && (
-            <Button variant="ghost" size="sm" onClick={workspace.resetPreset}>
-              <RotateCcw /> Reset changes
-            </Button>
-          )}
-        </div>
-        <PresetGallery
-          value={doc.presetId}
-          modified={workspace.modified}
-          onSelect={workspace.applyPreset}
-          columns={4}
-          thumbnailHeight={96}
-        />
-      </PopoverContent>
-    </Popover>
-  );
 
   return (
     <div
@@ -577,23 +609,24 @@ export default function Home() {
       />
 
       {/* ------------------------------------------------------------ header */}
-      <header className="flex h-14 shrink-0 items-center gap-1.5 border-b border-border bg-surface px-2.5 sm:gap-2 sm:px-3 lg:px-4">
+      <header className="relative z-20 flex h-14 shrink-0 items-center gap-1.5 border-b border-border bg-surface px-2.5 sm:gap-2 sm:px-3 lg:px-4">
         <Logo compact={!isDesktop} />
         {isDesktop && <span aria-hidden className="mx-1.5 h-5 w-px bg-border" />}
 
         <DocumentsMenu
-          title={title}
+          title={startScreen ? "New document" : title}
           currentId={doc.id}
           documents={workspace.documents}
           saveState={workspace.saveState}
           showSaveState={isDesktop && !empty}
           onOpen={workspace.openDocument}
           onCreate={() => workspace.createDocument()}
+          onOpenFile={() => fileInputRef.current?.click()}
           onDelete={deleteDocument}
           className="min-w-0 flex-1"
         />
 
-        {layout === "tablet" && (
+        {layout === "tablet" && hasContent && !startScreen && (
           <Segmented
             label="View"
             size="md"
@@ -614,8 +647,7 @@ export default function Home() {
               </Button>
             </Tip>
           )}
-          {isDesktop && stylePicker}
-          {isDesktop && (
+          {isDesktop && hasContent && !startScreen && (
             <Tip label={showEditor ? "Hide editor" : "Show editor"} shortcut={`${modKey} \\`}>
               <Button
                 variant="ghost"
@@ -628,55 +660,81 @@ export default function Home() {
               </Button>
             </Tip>
           )}
-          {!isPhone &&
-            (isDesktop ? (
+          {hasContent && !startScreen && !isPhone && (
+            <Tip label="Style and layout">
               <Button
-                variant={settingsOpen ? "secondary" : "ghost"}
-                aria-pressed={settingsOpen}
-                onClick={() => setSettingsOpen((open) => !open)}
+                variant={designOpen ? "secondary" : "ghost"}
+                size={isDesktop ? "md" : "icon"}
+                aria-label={`Style: ${PRESETS[doc.presetId].name}. Open the Design panel`}
+                aria-pressed={designOpen}
+                onClick={toggleDesign}
               >
-                <SlidersHorizontal /> Customise
+                <Palette />
+                {isDesktop && (
+                  <>
+                    <span className="max-w-[9rem] truncate">{PRESETS[doc.presetId].name}</span>
+                    {workspace.modified && (
+                      <span aria-hidden className="size-1.5 rounded-full bg-primary" />
+                    )}
+                  </>
+                )}
               </Button>
-            ) : (
-              <Tip label="Customise">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Customise"
-                  onClick={() => setSettingsOpen(true)}
-                >
-                  <SlidersHorizontal />
-                </Button>
-              </Tip>
-            ))}
-          <ExportButton {...exportProps} compact={isPhone} />
-          {moreMenu}
+            </Tip>
+          )}
+          {/* Style and Download arrive with the pages: there is nothing to
+              style or save in an empty document. */}
+          {hasContent && !startScreen && (
+            <div className="animate-fade-in">
+              <ExportButton {...exportProps} compact={isPhone} />
+            </div>
+          )}
+          <MoreMenu
+            modKey={modKey}
+            showKeyboardHelp={finePointer}
+            onShortcuts={() => setShortcutsOpen(true)}
+            onCommandMenu={() => setCommandOpen(true)}
+          />
         </div>
       </header>
 
       {/* -------------------------------------------------------------- body */}
-      {isDesktop ? (
+      {startScreen ? (
+        <main className="min-h-0 flex-1">
+          <StartScreen
+            modKey={modKey}
+            showKeys={finePointer}
+            documents={workspace.documents}
+            onPaste={() => void pasteFromClipboard()}
+            onOpenFile={() => fileInputRef.current?.click()}
+            onWrite={startWriting}
+            onSample={loadSample}
+            onOpenDocument={workspace.openDocument}
+          />
+        </main>
+      ) : isDesktop ? (
         <main className="flex min-h-0 flex-1">
-          {showEditor && (
+          {(showEditor || !hasContent) && (
             <>
               <div
-                className="flex min-w-0 shrink-0 flex-col"
-                style={{ width: `min(${editorWidth}px, 58vw)` }}
+                className="flex min-w-0 shrink-0 flex-col transition-[width] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]"
+                style={{ width: hasContent ? `min(${editorWidth}px, 58vw)` : "100%" }}
               >
-                {editorPane}
+                {editorPane(!hasContent)}
               </div>
-              <Splitter
-                value={editorWidth}
-                min={MIN_EDITOR_WIDTH}
-                max={Math.round(window.innerWidth * 0.58)}
-                onChange={resizeEditor}
-                onReset={() => resizeEditor(DEFAULT_EDITOR_WIDTH)}
-              />
+              {hasContent && (
+                <Splitter
+                  value={editorWidth}
+                  min={MIN_EDITOR_WIDTH}
+                  max={Math.round(window.innerWidth * 0.58)}
+                  onChange={resizeEditor}
+                  onReset={() => resizeEditor(DEFAULT_EDITOR_WIDTH)}
+                />
+              )}
             </>
           )}
-          <div className="min-w-0 flex-1">{previewPane}</div>
-          {settingsDocked && settingsOpen && (
-            <div className="w-[384px] shrink-0 border-l border-border animate-fade-in">
+          {hasContent && <div className="min-w-0 flex-1 animate-reveal">{previewPane}</div>}
+          {settingsDocked && panelOpen && (
+            <div className="w-[384px] shrink-0 border-l border-border animate-panel-in">
               {settingsPanel(false)}
             </div>
           )}
@@ -689,50 +747,53 @@ export default function Home() {
         <main className="relative min-h-0 flex-1">
           <div
             className={cn(
-              "absolute inset-0",
-              view === "write" ? "z-10" : "pointer-events-none opacity-0",
+              "absolute inset-0 transition-opacity duration-200",
+              paneView === "write" ? "z-10" : "pointer-events-none opacity-0",
             )}
-            inert={view !== "write"}
+            inert={paneView !== "write"}
           >
-            {editorPane}
+            {editorPane(false)}
           </div>
-          <div
-            className={cn(
-              "absolute inset-0",
-              view === "preview" ? "z-10" : "pointer-events-none opacity-0",
-            )}
-            inert={view !== "preview"}
-          >
-            {previewPane}
-          </div>
+          {hasContent && (
+            <div
+              className={cn(
+                "absolute inset-0 transition-opacity duration-200",
+                paneView === "preview" ? "z-10" : "pointer-events-none opacity-0",
+              )}
+              inert={paneView !== "preview"}
+            >
+              {previewPane}
+            </div>
+          )}
         </main>
       )}
 
-      {!isPhone && (
+      {!isPhone && hasContent && !startScreen && (
         <StatusBar
-          words={empty ? 0 : words}
-          headings={empty ? 0 : headings}
+          words={hasContent ? words : 0}
+          headings={hasContent ? headings : 0}
           missing={missing}
           status={preview}
-          paginate={paginate && !empty}
+          paginate={paginate && hasContent}
         />
       )}
 
-      {isPhone && (
+      {isPhone && !startScreen && (
         <MobileTabBar
-          view={view}
+          view={paneView}
           onViewChange={setView}
-          onStyle={() => setSettingsOpen(true)}
-          styleOpen={settingsOpen}
-          pages={empty ? 0 : pages}
+          onStyle={() => setSheetOpen(true)}
+          styleOpen={sheetOpen}
+          pages={pages}
+          previewEnabled={hasContent}
         />
       )}
 
       {/* -------------------------------------------------- overlays */}
-      <Dialog open={settingsOpen && !settingsDocked} onOpenChange={setSettingsOpen}>
+      <Dialog open={sheetOpen && !settingsDocked} onOpenChange={setSheetOpen}>
         <SheetContent
           side={isPhone ? "bottom" : "right"}
-          title="Customise"
+          title="Design"
           description="Choose a style and adjust the page, type, colours and structure."
           className={isPhone ? "h-[88dvh]" : undefined}
           actions={
@@ -756,7 +817,7 @@ export default function Home() {
         presetId={doc.presetId}
         paginate={paginate}
         editorVisible={showEditor}
-        settingsVisible={settingsOpen}
+        settingsVisible={designOpen}
         onNew={() => workspace.createDocument()}
         onOpenFile={() => fileInputRef.current?.click()}
         onPaste={() => void pasteFromClipboard()}
@@ -765,8 +826,8 @@ export default function Home() {
         onHtml={() => void downloadHtml()}
         onMarkdown={downloadMarkdown}
         onPreset={workspace.applyPreset}
-        onToggleEditor={isDesktop ? () => setShowEditor((visible) => !visible) : undefined}
-        onToggleSettings={() => setSettingsOpen((open) => !open)}
+        onToggleEditor={isDesktop && hasContent ? () => setShowEditor((visible) => !visible) : undefined}
+        onToggleSettings={toggleDesign}
         onPaginate={setPaginate}
         onFit={() => setZoom("fit")}
         onTheme={setThemePreference}
@@ -780,7 +841,7 @@ export default function Home() {
         <div className="pointer-events-none fixed inset-0 z-[80] grid place-items-center bg-background/80 backdrop-blur-sm animate-fade-in">
           <div className="flex flex-col items-center rounded-2xl border-2 border-dashed border-primary bg-surface px-12 py-9 text-center shadow-lg animate-pop-in">
             <span className="grid size-12 place-items-center rounded-2xl bg-primary-soft text-primary">
-              <FileUp className="size-6" />
+              <FileUp className="size-6 animate-bob" />
             </span>
             <p className="mt-3 text-[15px] font-semibold">Drop to open</p>
             <p className="mt-1 text-xs text-muted-foreground">Markdown or plain text files</p>

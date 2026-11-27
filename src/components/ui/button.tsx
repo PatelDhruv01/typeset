@@ -32,7 +32,9 @@ export function buttonClass(
 ): string {
   return cn(
     "inline-flex shrink-0 select-none items-center justify-center whitespace-nowrap font-medium",
-    "transition-[color,background-color,border-color,box-shadow,opacity] duration-150",
+    "transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150",
+    // A press you can feel: the button gives a little under the pointer.
+    "active:scale-[0.97]",
     "disabled:pointer-events-none disabled:opacity-45 [&_svg]:shrink-0",
     VARIANTS[variant],
     SIZES[size],
