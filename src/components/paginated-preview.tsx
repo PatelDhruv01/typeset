@@ -62,7 +62,13 @@ type Props = {
  */
 const PREVIEW_CHROME = `
 :root { color-scheme: light; }
-html { background: transparent !important; }
+/* Transparent, so the app's canvas shows around the sheets - but through an
+   empty image rather than no background at all. An html element with no
+   background hands the body's background to the whole canvas, and in the
+   continuous view the body is the sheet: its page colour spread across the
+   entire frame, a white slab either side of the page. Any background image,
+   even a transparent one, keeps the body's background on the body. */
+html { background: transparent linear-gradient(transparent, transparent) !important; }
 /* Only paginated: there each .pagedjs_page is the sheet. In the continuous
    view the body *is* the sheet - making it transparent too showed the app's
    canvas through the page, dark text on near-black in dark mode. */
